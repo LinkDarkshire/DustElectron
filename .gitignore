@@ -1,3 +1,8 @@
 node_modules
 node_modules
-config/vpn/au772.nordvpn.com.tcp.ovpn
+config/vpn/
+assets/games/
+Wichtig Beachten.txt
+raw-urls.txt
+Github_files.txt
+gen-raw.py
