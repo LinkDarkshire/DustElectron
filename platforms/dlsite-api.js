@@ -5,230 +5,135 @@ const path = require('path');
 const crypto = require('crypto');
 const { getLogger } = require('../modules/logger');
 
-const logger = getLogger();
-
 /**
- * DLSite API Client für Electron mit umfassendem Logging
- * Diese Klasse bietet Methoden zum Abrufen von Informationen über Spiele auf DLSite
+ * DLSite API Client for Electron with proper English language support
+ * This class provides methods to retrieve information about games on DLSite
  */
 class DLSiteClient {
   /**
-   * Konstruktor
-   * @param {string} locale - Locale für die API-Anfragen (Standard: 'en_US')
-   * @param {string} assetsPath - Pfad zum Assets-Ordner (Standard: './assets/games')
+   * Constructor
+   * @param {Object} networkManager - Network manager instance for requests
+   * @param {string} assetsPath - Path to assets folder (default: './assets/games')
+   * @param {string} locale - Locale for API requests (default: 'en_US')
    */
   constructor(networkManager, assetsPath = './assets/games', locale = 'en_US') {
     this.locale = locale;
     this.assetsPath = assetsPath;
     this.networkManager = networkManager;
+    
+    // Set up headers with proper language support
     this.headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-      'Accept-Language': locale
+      'Accept-Language': this.locale === 'en_US' ? 'en-US,en;q=0.9' : locale,
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Encoding': 'gzip, deflate, br'
     };
+    
+    // Set up cookies with proper locale support
     this.cookies = {
       adultchecked: '1'
     };
     
-    logger.info('DLSITE_CLIENT', 'DLSite Client initialisiert', {
+    // Add locale cookie for English support
+    if (this.locale === 'en_US') {
+      this.cookies.locale = 'en_US';
+    }
+    
+    // Ensure assets folder exists
+    if (!fs.existsSync(this.assetsPath)) {
+      fs.mkdirSync(this.assetsPath, { recursive: true });
+    }
+    
+    // Cache for downloaded images
+    this.imageCache = new Map();
+    
+    const logger = getLogger();
+    logger.info('DLSITE_CLIENT', 'DLSite Client initialized', {
       locale: this.locale,
       assetsPath: this.assetsPath,
       hasNetworkManager: !!this.networkManager
     });
-    
-    // Stelle sicher, dass der Assets-Ordner existiert
-    if (!fs.existsSync(this.assetsPath)) {
-      logger.debug('DLSITE_CLIENT', 'Erstelle Assets-Ordner', { path: this.assetsPath });
-      fs.mkdirSync(this.assetsPath, { recursive: true });
-      logger.logFileOperation('CREATE_DIRECTORY', this.assetsPath, true);
-    } else {
-      logger.debug('DLSITE_CLIENT', 'Assets-Ordner bereits vorhanden', { path: this.assetsPath });
-    }
-    
-    // Cache für heruntergeladene Bilder
-    this.imageCache = new Map();
-    logger.debug('DLSITE_CLIENT', 'Image-Cache initialisiert');
   }
 
   /**
-   * Findet eine DLSite Produkt-ID in einem String
-   * @param {string} str - String, der eine DLSite-ID enthält
-   * @returns {string} - Normalisierte DLSite-ID
+   * Finds a DLSite product ID in a string
+   * @param {string} str - String containing a DLSite ID
+   * @returns {string} - Normalized DLSite ID
    */
   findProductId(str) {
-    logger.debug('DLSITE_PARSE', 'Suche Produkt-ID in String', { input: str });
-    
     const match = str.match(/(?<!\w)[BRV]J\d+/i);
     if (match) {
-      const productId = match[0].toUpperCase();
-      logger.debug('DLSITE_PARSE', 'Produkt-ID gefunden', { 
-        input: str,
-        productId: productId 
-      });
-      return productId;
+      return match[0].toUpperCase();
     }
-    
-    logger.error('DLSITE_PARSE', 'Keine gültige DLSite-Produkt-ID gefunden', { input: str });
-    throw new Error(`Keine gültige DLSite-Produkt-ID gefunden: ${str}`);
+    throw new Error(`No valid DLSite product ID found: ${str}`);
   }
 
   /**
-   * Konvertiert Cookies-Objekt in Cookie-Header-String
+   * Converts cookies object to cookie header string
    * @private
-   * @returns {string} - Cookie-Header-String
+   * @returns {string} - Cookie header string
    */
   _getCookieHeader() {
-    const cookieHeader = Object.entries(this.cookies)
+    return Object.entries(this.cookies)
       .map(([key, value]) => `${key}=${value}`)
       .join('; ');
-    
-    logger.trace('DLSITE_REQUEST', 'Cookie-Header erstellt', { 
-      cookies: this.cookies,
-      header: cookieHeader 
-    });
-    
-    return cookieHeader;
   }
 
   /**
-   * Prüft, ob eine URL absolut ist und fügt ggf. das Protokoll und die Domain hinzu
+   * Checks if a URL is absolute and adds protocol/domain if necessary
    * @private
-   * @param {string} url - Die zu prüfende URL
+   * @param {string} url - URL to check
    * @returns {string} - Absolute URL
    */
   _ensureAbsoluteUrl(url) {
-    if (!url) {
-      logger.debug('DLSITE_URL', 'Leere URL übergeben');
-      return null;
-    }
-    
-    let absoluteUrl = url;
+    if (!url) return null;
     
     if (url.startsWith('//')) {
-      // URLs, die mit // beginnen, fehlt nur das Protokoll
-      absoluteUrl = `https:${url}`;
-      logger.debug('DLSITE_URL', 'Protokoll zu URL hinzugefügt', { 
-        original: url,
-        absolute: absoluteUrl 
-      });
+      return `https:${url}`;
     } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
-      // Relative URLs erhalten das Standard-Protokoll und die Domain
       if (url.startsWith('/')) {
-        absoluteUrl = `https://www.dlsite.com${url}`;
+        return `https://www.dlsite.com${url}`;
       } else {
-        absoluteUrl = `https://www.dlsite.com/${url}`;
+        return `https://www.dlsite.com/${url}`;
       }
-      logger.debug('DLSITE_URL', 'Domain zu relativer URL hinzugefügt', { 
-        original: url,
-        absolute: absoluteUrl 
-      });
-    } else {
-      logger.trace('DLSITE_URL', 'URL bereits absolut', { url });
     }
     
-    return absoluteUrl;
+    return url;
   }
 
   /**
-   * Macht einen HTTP-Request - mit oder ohne VPN
+   * Makes an HTTP request - with or without VPN
    * @private
    */
   async _makeRequest(url, options = {}) {
-    logger.startTimer(`request_${url}`);
-    
-    const requestId = crypto.randomBytes(4).toString('hex');
-    logger.debug('DLSITE_REQUEST', 'Beginne HTTP-Request', { 
-      requestId,
-      url,
-      method: options.method || 'GET',
-      hasHeaders: !!options.headers,
-      hasNetworkManager: !!this.networkManager 
-    });
-    
-    try {
-      let response;
-      
-      if (this.networkManager) {
-        logger.debug('DLSITE_REQUEST', 'Verwende NetworkManager', { requestId });
-        response = await this.networkManager.makeRequest(url, options);
-      } else {
-        // Fallback auf normales fetch wenn kein NetworkManager vorhanden
-        logger.debug('DLSITE_REQUEST', 'Verwende direktes fetch (Fallback)', { requestId });
-        const fetch = require('node-fetch');
-        response = await fetch(url, options);
-      }
-      
-      const requestTime = logger.endTimer(`request_${url}`);
-      
-      logger.logAPICall(
-        options.method || 'GET',
-        url,
-        options.headers,
-        options.body,
-        response.status,
-        `${requestTime.toFixed(2)}ms`
-      );
-      
-      if (!response.ok) {
-        logger.error('DLSITE_REQUEST', 'HTTP-Request fehlgeschlagen', { 
-          requestId,
-          url,
-          status: response.status,
-          statusText: response.statusText 
-        });
-      } else {
-        logger.debug('DLSITE_REQUEST', 'HTTP-Request erfolgreich', { 
-          requestId,
-          url,
-          status: response.status,
-          contentType: response.headers.get('content-type') 
-        });
-      }
-      
-      return response;
-    } catch (error) {
-      logger.endTimer(`request_${url}`);
-      logger.error('DLSITE_REQUEST', 'HTTP-Request Fehler', { 
-        requestId,
-        url 
-      }, error);
-      throw error;
+    if (this.networkManager) {
+      return await this.networkManager.makeRequest(url, options);
+    } else {
+      const fetch = require('node-fetch');
+      return await fetch(url, options);
     }
   }
 
   /**
-   * Ruft grundlegende Produktinformationen vom DLSite AJAX-API ab
-   * @param {string} productId - DLSite Produkt-ID
-   * @returns {Promise<Object>} - Produktinformationen
+   * Retrieves basic product information from DLSite AJAX API
+   * @param {string} productId - DLSite product ID
+   * @returns {Promise<Object>} - Product information
    */
   async getProductInfo(productId) {
-    logger.startTimer('get_product_info');
-    logger.info('DLSITE_API', 'Rufe Produktinformationen ab', { productId });
-    
     try {
-      // Normalisiere die Produkt-ID
-      let normalizedProductId = productId;
+      // Normalize product ID
       try {
-        normalizedProductId = this.findProductId(productId);
-        logger.debug('DLSITE_API', 'Produkt-ID normalisiert', { 
-          original: productId,
-          normalized: normalizedProductId 
-        });
+        productId = this.findProductId(productId);
       } catch (error) {
-        // Wenn die ID nicht extrahiert werden kann, verwende sie direkt
-        logger.warn('DLSITE_API', 'Konnte Produkt-ID nicht normalisieren, verwende Original', { 
-          original: productId 
-        });
+        // If ID cannot be extracted, use it directly
       }
 
-      const url = `https://www.dlsite.com/maniax/product/info/ajax?product_id=${normalizedProductId}&locale=${this.locale}`;
+      const logger = getLogger();
+      logger.info('DLSITE_API', 'Retrieving product information', { productId });
+
+      const url = `https://www.dlsite.com/maniax/product/info/ajax?product_id=${productId}&locale=${this.locale}`;
       
-      logger.debug('DLSITE_API', 'Sende API-Request', { 
-        url,
-        productId: normalizedProductId,
-        locale: this.locale 
-      });
-      
-      const response = await this._makeRequest(url, {
+      const response = await this.networkManager.makeRequest(url, {
         headers: {
           ...this.headers,
           Cookie: this._getCookieHeader()
@@ -236,389 +141,461 @@ class DLSiteClient {
       });
 
       if (!response.ok) {
-        throw new Error(`HTTP Fehler: ${response.status}`);
+        throw new Error(`HTTP error: ${response.status}`);
       }
 
       const data = await response.json();
       
-      logger.debug('DLSITE_API', 'API-Antwort erhalten', { 
-        productId: normalizedProductId,
-        hasData: !!data,
-        hasProductData: !!(data && data[normalizedProductId]) 
-      });
-      
-      if (!data || !data[normalizedProductId]) {
-        throw new Error(`Keine Produktinformationen gefunden für: ${normalizedProductId}`);
+      if (!data || !data[productId]) {
+        throw new Error(`No product information found for: ${productId}`);
       }
       
-      // Stelle sicher, dass alle URLs absolut sind
-      const result = data[normalizedProductId];
+      // Ensure all URLs are absolute
+      const result = data[productId];
       if (result.work_image) {
-        const originalImage = result.work_image;
         result.work_image = this._ensureAbsoluteUrl(result.work_image);
-        logger.debug('DLSITE_API', 'Bild-URL verarbeitet', { 
-          original: originalImage,
-          absolute: result.work_image 
-        });
       }
       
-      const apiTime = logger.endTimer('get_product_info');
-      
-      logger.info('DLSITE_API', 'Produktinformationen erfolgreich abgerufen', { 
-        productId: normalizedProductId,
+      logger.info('DLSITE_API', 'Product information successfully retrieved', {
+        productId,
         title: result.work_name,
-        maker: result.maker_name,
-        apiTime: `${apiTime.toFixed(2)}ms` 
+        apiTime: 'completed'
       });
       
       return result;
     } catch (error) {
-      logger.endTimer('get_product_info');
-      logger.error('DLSITE_API', 'Fehler beim Abrufen der Produktinformationen', { productId }, error);
+      const logger = getLogger();
+      logger.error('DLSITE_API', 'Error retrieving product information', { productId, error: error.message });
       throw error;
     }
   }
 
   /**
-   * Ruft detaillierte Produktinformationen von der DLSite-Webseite ab
-   * @param {string} productId - DLSite Produkt-ID
-   * @param {string} category - DLSite-Kategorie (Standard: 'maniax')
-   * @returns {Promise<Object>} - Detaillierte Produktinformationen
+   * Retrieves detailed product information from DLSite website with proper locale support
+   * @param {string} productId - DLSite product ID
+   * @param {string} category - DLSite category (default: 'maniax')
+   * @returns {Promise<Object>} - Detailed product information
    */
   async getWorkDetails(productId, category = 'maniax') {
-    logger.startTimer('get_work_details');
-    logger.info('DLSITE_SCRAPE', 'Rufe detaillierte Produktinformationen ab', { 
-      productId,
-      category 
-    });
-    
     try {
-      const urls = [
+      const logger = getLogger();
+      logger.info('DLSITE_SCRAPE', 'Retrieving detailed product information', {
+        productId,
+        category
+      });
+
+      // Build URLs with proper locale parameter for English content
+      const baseUrls = [
         `https://www.dlsite.com/${category}/work/=/product_id/${productId}.html`,
         `https://www.dlsite.com/${category}/announce/=/product_id/${productId}.html`
       ];
 
-      logger.debug('DLSITE_SCRAPE', 'Versuche URLs', { urls });
+      // Add locale parameter to URLs for English support
+      const urls = baseUrls.map(url => {
+        if (this.locale === 'en_US') {
+          const separator = url.includes('?') ? '&' : '?';
+          return `${url}${separator}locale=en_US`;
+        }
+        return url;
+      });
 
       let html = null;
       let response = null;
       let finalUrl = null;
 
-      // Versuche URLs nacheinander, bis eine erfolgreich ist
-      for (let i = 0; i < urls.length; i++) {
-        const url = urls[i];
-        logger.debug('DLSITE_SCRAPE', `Versuche URL ${i + 1}/${urls.length}`, { url });
-        
+      // Try URLs in sequence until one succeeds
+      for (const url of urls) {
         try {
-          response = await this._makeRequest(url, {
+          logger.debug('DLSITE_SCRAPE', `Trying URL: ${url}`);
+          
+          response = await this.networkManager.makeRequest(url, {
             headers: {
               ...this.headers,
-              Cookie: this._getCookieHeader()
+              Cookie: this._getCookieHeader(),
+              // Add explicit referer for better compatibility
+              'Referer': `https://www.dlsite.com/${category}/`
             }
           });
 
           if (response.ok) {
             html = await response.text();
             finalUrl = url;
-            logger.info('DLSITE_SCRAPE', 'Erfolgreiche Antwort erhalten', { 
-              url,
+            logger.info('DLSITE_SCRAPE', 'Successful response received', {
+              url: finalUrl,
               htmlLength: html.length,
-              status: response.status 
+              status: response.status
             });
             break;
-          } else {
-            logger.warn('DLSITE_SCRAPE', 'URL nicht erfolgreich', { 
-              url,
-              status: response.status 
-            });
           }
         } catch (error) {
-          logger.warn('DLSITE_SCRAPE', `Fehler beim Abrufen von ${url}`, { url }, error);
+          logger.warn('DLSITE_SCRAPE', `Error fetching ${url}`, { error: error.message });
         }
       }
 
       if (!html) {
-        throw new Error(`Konnte keine Details für ${productId} abrufen`);
+        throw new Error(`Could not retrieve details for ${productId}`);
       }
 
-      logger.debug('DLSITE_SCRAPE', 'Beginne HTML-Parsing', { 
-        htmlLength: html.length,
-        finalUrl 
-      });
-      
-      const parseResult = this.parseWorkHTML(html, finalUrl);
-      
-      const detailsTime = logger.endTimer('get_work_details');
-      
-      logger.info('DLSITE_SCRAPE', 'Detaillierte Informationen erfolgreich geparst', { 
-        productId,
-        title: parseResult.work_name,
-        detailsTime: `${detailsTime.toFixed(2)}ms`,
-        fieldsExtracted: Object.keys(parseResult).length 
-      });
-      
-      return parseResult;
+      return this.parseWorkHTML(html, finalUrl);
     } catch (error) {
-      logger.endTimer('get_work_details');
-      logger.error('DLSITE_SCRAPE', 'Fehler beim Abrufen der Produktdetails', { 
-        productId,
-        category 
-      }, error);
+      const logger = getLogger();
+      logger.error('DLSITE_SCRAPE', 'Error retrieving product details', { 
+        productId, 
+        category, 
+        error: error.message 
+      });
       throw error;
     }
   }
 
-  /**
-   * Parst HTML einer Werk-Seite für detaillierte Informationen
+/**
+   * Parses HTML from a work page for detailed information with enhanced language support
    * @private
-   * @param {string} html - HTML-Inhalt der Werk-Seite
-   * @param {string} baseUrl - Basis-URL für relative Links
-   * @returns {Object} - Extrahierte Informationen
+   * @param {string} html - HTML content of work page
+   * @param {string} baseUrl - Base URL for relative links
+   * @returns {Object} - Extracted information
    */
   parseWorkHTML(html, baseUrl) {
-    logger.startTimer('parse_work_html');
-    logger.debug('DLSITE_PARSE', 'Beginne HTML-Parsing', { 
+    const $ = cheerio.load(html);
+    const details = {};
+    
+    const logger = getLogger();
+    logger.info('DLSITE_API_TEST', '🔥 NEW PARSER VERSION IS RUNNING 🔥', {
+      testMessage: 'If you see this, the new code is loaded!'
+    });
+    
+    logger.debug('DLSITE_API_SCRAPE', 'Starting HTML parsing', { 
       htmlLength: html.length,
       baseUrl 
     });
     
-    const $ = cheerio.load(html);
-    const details = {};
-    
-    // Grundlegende Informationen
+    // Basic information
     details.work_name = $('#work_name').text().trim();
-    logger.debug('DLSITE_PARSE', 'Titel extrahiert', { title: details.work_name });
+    logger.info('DLSITE_API_PARSE', 'Basic info extracted', {
+      work_name: details.work_name
+    });
     
-    // Circle/Hersteller-Name
+    // Circle/Maker name
     const makerName = $('span.maker_name a').text().trim();
     details.circle = makerName;
-    logger.debug('DLSITE_PARSE', 'Circle extrahiert', { circle: details.circle });
+    logger.info('DLSITE_API_PARSE', 'Circle info extracted', {
+      circle: details.circle
+    });
     
-    // Beschreibung
-    details.description = $('#work_outline').text().trim();
-    logger.debug('DLSITE_PARSE', 'Beschreibung extrahiert', { 
-      descriptionLength: details.description.length 
-    });
-
-    // Genre
-    details.genre = [];
-    $('.main_genre a').each((i, elem) => {
-      details.genre.push($(elem).text().trim());
-    });
-    logger.debug('DLSITE_PARSE', 'Genres extrahiert', { 
-      genreCount: details.genre.length,
-      genres: details.genre 
-    });
-
-    // Cover-Bild
-    const coverImg = $('#work_left .product-slider-data div img');
+    // Cover image with multiple fallbacks
+    let coverImg = $('#work_left .product-slider-data div img');
+    if (!coverImg.length) {
+      coverImg = $('.product_image img');
+    }
+    if (!coverImg.length) {
+      coverImg = $('.work_image img');
+    }
+    
     if (coverImg.length) {
-      let coverImageSrc = coverImg.attr('src');
+      let coverImageSrc = coverImg.first().attr('src') || coverImg.first().attr('data-src');
       details.coverImage = this._ensureAbsoluteUrl(coverImageSrc);
-      logger.debug('DLSITE_PARSE', 'Cover-Bild extrahiert', { 
-        originalSrc: coverImageSrc,
-        absoluteUrl: details.coverImage 
+      logger.info('DLSITE_API_PARSE', 'Cover image extracted', {
+        coverImage: details.coverImage
       });
-    } else {
-      logger.debug('DLSITE_PARSE', 'Kein Cover-Bild gefunden');
     }
 
-    // Szenario, Illustrationen, Sprecher, usw.
-    let fieldsExtracted = 0;
-    $('#work_outline tr, #work_maker tr').each((i, elem) => {
-      const header = $(elem).find('th').text().trim();
-      const value = $(elem).find('td');
+    // Get the work outline text for parsing structured data
+    const workOutlineText = $('#work_outline').text();
+    
+    logger.info('DLSITE_API_TEXT_DEBUG', 'Work outline text for parsing', {
+      workOutlineLength: workOutlineText.length,
+      workOutlineText: workOutlineText
+    });
 
-      // Mapping von japanischen/englischen Headers zu Feldnamen
-      const headerMap = {
-        '作者': 'author',
-        'Author': 'author',
-        'サークル名': 'circle',
-        'Circle': 'circle',
-        'ブランド名': 'brand',
-        'Brand': 'brand',
-        '出版社名': 'publisher',
-        'Publisher': 'publisher',
-        '言語': 'language',
-        'Language': 'language',
-        'シナリオ': 'scenario',
-        'Scenario': 'scenario',
-        'イラスト': 'illustration',
-        'Illustration': 'illustration',
-        '声優': 'voice_actor',
-        'Voice Actor': 'voice_actor',
-        'ジャンル': 'genre',
-        'Genre': 'genre',
-        '販売日': 'release_date',
-        'Release Date': 'release_date',
-        'ファイル容量': 'file_size',
-        'File Size': 'file_size'
-      };
+    // Parse structured data from work outline using text patterns
+    // Release date
+    const releaseDateMatch = workOutlineText.match(/Release date\s+([A-Za-z]{3}\/\d{2}\/\d{4})/i) ||
+                            workOutlineText.match(/販売日\s+(\d{4}年\d{1,2}月\d{1,2}日)/);
+    if (releaseDateMatch) {
+      details.release_date = releaseDateMatch[1];
+      logger.info('DLSITE_API_FIELD', 'Release date extracted', {
+        releaseDate: details.release_date
+      });
+    }
 
-      if (headerMap[header]) {
-        const field = headerMap[header];
-        fieldsExtracted++;
+    // Update information
+    const updateMatch = workOutlineText.match(/Update information\s+([A-Za-z]{3}\s+\d{2}\s+\d{4})/i);
+    if (updateMatch) {
+      details.update_date = updateMatch[1];
+      logger.info('DLSITE_API_FIELD', 'Update date extracted', {
+        updateDate: details.update_date
+      });
+    }
+
+    // Voice Actors
+    const voiceActorMatch = workOutlineText.match(/Voice Actor\s+([^A-Z\n]+?)(?=\s+Age|\s+Product format|\s+File format|$)/i);
+    if (voiceActorMatch) {
+      details.voice_actor = voiceActorMatch[1].split(/[\/,、]/).map(s => s.trim()).filter(s => s);
+      logger.info('DLSITE_API_FIELD', 'Voice actors extracted', {
+        voiceActors: details.voice_actor
+      });
+    }
+
+    // Age rating
+    const ageMatch = workOutlineText.match(/Age\s+(R18|All-ages)/i);
+    if (ageMatch) {
+      details.age_rating = ageMatch[1];
+      logger.info('DLSITE_API_FIELD', 'Age rating extracted', {
+        ageRating: details.age_rating
+      });
+    }
+
+    // Product format
+    const productFormatMatch = workOutlineText.match(/Product format\s+([^F\n]+?)(?=\s+File format|\s+Supported languages|$)/i);
+    if (productFormatMatch) {
+      details.product_format = productFormatMatch[1].trim();
+      logger.info('DLSITE_API_FIELD', 'Product format extracted', {
+        productFormat: details.product_format
+      });
+    }
+
+    // File format
+    const fileFormatMatch = workOutlineText.match(/File format\s+([^S\n]+?)(?=\s+Supported languages|\s+Genre|$)/i);
+    if (fileFormatMatch) {
+      details.file_format = fileFormatMatch[1].trim();
+      logger.info('DLSITE_API_FIELD', 'File format extracted', {
+        fileFormat: details.file_format
+      });
+    }
+
+    // Supported languages
+    const languageMatch = workOutlineText.match(/Supported languages\s+([^G\n]+?)(?=\s+Genre|\s+File size|$)/i);
+    if (languageMatch) {
+      details.language = languageMatch[1].trim();
+      logger.info('DLSITE_API_FIELD', 'Language extracted', {
+        language: details.language
+      });
+    }
+
+    // File size
+    const fileSizeMatch = workOutlineText.match(/File size\s+([\d.]+\s*[KMGT]B)/i);
+    if (fileSizeMatch) {
+      details.file_size = fileSizeMatch[1];
+      logger.info('DLSITE_API_FIELD', 'File size extracted', {
+        fileSize: details.file_size
+      });
+    }
+
+    // Genre extraction - extract actual genre tags, not metadata
+    details.genre = [];
+    const genreMatch = workOutlineText.match(/Genre\s+(.*?)(?=\s+File size|$)/is);
+    if (genreMatch) {
+      const genreText = genreMatch[1];
+      // Split by common separators and clean up
+      const genreList = genreText.split(/\s{2,}|\n/).map(g => g.trim()).filter(g => {
+        // Filter out empty strings and non-genre items
+        return g && 
+               g !== 'File size' && 
+               g !== 'Application' && 
+               g !== 'Japanese' && 
+               g !== 'R18' && 
+               g !== 'Role-playing' && 
+               g !== 'Voice' &&
+               !g.match(/^\d/); // Don't include file sizes
+      });
+      
+      details.genre = genreList;
+      logger.info('DLSITE_API_FIELD', 'Genres extracted', {
+        genres: details.genre,
+        rawGenreText: genreText
+      });
+    }
+
+    // Extract tags (same as genre for now)
+    details.tags = [...details.genre];
+
+    // Get the actual game description from work_parts
+    let description = '';
+    const workPartsText = $('.work_parts').text();
+    
+    logger.info('DLSITE_API_DESC_DEBUG', 'Work parts analysis', {
+      workPartsLength: workPartsText.length,
+      workPartsSnippet: workPartsText.substring(0, 1000)
+    });
+
+    // Extract character descriptions and game info from work_parts
+    if (workPartsText.length > 100) {
+      // Find the character introduction section
+      const characterMatch = workPartsText.match(/キャラクター紹介\s*(.*?)(?=エロステータス|エンディング|$)/s);
+      if (characterMatch) {
+        let characterInfo = characterMatch[1].trim();
         
-        // Für Felder, die Listen sind
-        if (['author', 'scenario', 'illustration', 'voice_actor', 'genre'].includes(field)) {
-          details[field] = [];
-          value.find('a').each((j, link) => {
-            details[field].push($(link).text().trim());
-          });
-          logger.trace('DLSITE_PARSE', `Liste-Feld extrahiert: ${field}`, { 
-            field,
-            count: details[field].length,
-            values: details[field] 
-          });
-        } else {
-          // Für einfache Textfelder
-          details[field] = value.text().trim();
-          logger.trace('DLSITE_PARSE', `Text-Feld extrahiert: ${field}`, { 
-            field,
-            value: details[field] 
-          });
+        // Clean up the character info
+        characterInfo = characterInfo
+          .replace(/\s+/g, ' ')
+          .replace(/\n+/g, '\n')
+          .trim();
+        
+        description = characterInfo;
+        logger.info('DLSITE_API_DESC', 'Character description extracted', {
+          descriptionLength: description.length,
+          description: description.substring(0, 500) + '...'
+        });
+      }
+    }
+
+    // If no character description found, try alternative selectors
+    if (!description) {
+      const altDescSelectors = [
+        '.work_parts_text',
+        '.product_outline',
+        '.work_article .work_parts_text'
+      ];
+      
+      for (const selector of altDescSelectors) {
+        const descElement = $(selector);
+        if (descElement.length) {
+          let descText = descElement.text().trim();
+          
+          // Clean up and filter
+          descText = descText.replace(/\s+/g, ' ').trim();
+          
+          if (descText && descText.length > 50) {
+            description = descText;
+            logger.info('DLSITE_API_DESC', 'Alternative description found', {
+              selector,
+              descriptionLength: description.length
+            });
+            break;
+          }
+        }
+      }
+    }
+    
+    details.description = description;
+
+    // Sample images
+    details.sample_images = [];
+    $('.product-slider-data div, .work_sample img').each((i, elem) => {
+      const src = $(elem).attr('data-src') || $(elem).attr('src');
+      if (src && !src.includes('_img_main')) {
+        const absoluteSrc = this._ensureAbsoluteUrl(src);
+        if (absoluteSrc && !details.sample_images.includes(absoluteSrc)) {
+          details.sample_images.push(absoluteSrc);
         }
       }
     });
 
-    logger.debug('DLSITE_PARSE', 'Metadata-Felder extrahiert', { fieldsExtracted });
-
-    // Sample-Bilder
-    details.sample_images = [];
-    $('.product-slider-data div').each((i, elem) => {
-      const src = $(elem).attr('data-src');
-      if (src && !src.includes('_img_main')) {
-        const absoluteSrc = this._ensureAbsoluteUrl(src);
-        details.sample_images.push(absoluteSrc);
-      }
-    });
-    
-    logger.debug('DLSITE_PARSE', 'Sample-Bilder extrahiert', { 
-      sampleCount: details.sample_images.length 
-    });
-
-    // Tags extrahieren (zusätzlich zu Genre)
-    details.tags = [];
-    $('.work_genre a').each((i, elem) => {
-      details.tags.push($(elem).text().trim());
-    });
-    
-    logger.debug('DLSITE_PARSE', 'Tags extrahiert', { 
-      tagCount: details.tags.length,
-      tags: details.tags 
-    });
-
-    const parseTime = logger.endTimer('parse_work_html');
-    
-    logger.debug('DLSITE_PARSE', 'HTML-Parsing abgeschlossen', { 
-      parseTime: `${parseTime.toFixed(2)}ms`,
-      totalFields: Object.keys(details).length,
-      fieldsExtracted 
+    // Final summary of extracted data
+    logger.info('DLSITE_API_SCRAPE', 'Detailed information successfully parsed', {
+      title: details.work_name,
+      circle: details.circle,
+      fieldsExtracted: Object.keys(details).length,
+      hasReleaseDate: !!details.release_date,
+      releaseDate: details.release_date || 'NOT_FOUND',
+      hasUpdateDate: !!details.update_date,
+      updateDate: details.update_date || 'NOT_FOUND',
+      hasFileSize: !!details.file_size,
+      fileSize: details.file_size || 'NOT_FOUND',
+      hasVoiceActors: !!(details.voice_actor && details.voice_actor.length > 0),
+      voiceActors: details.voice_actor || [],
+      hasAgeRating: !!details.age_rating,
+      ageRating: details.age_rating || 'NOT_FOUND',
+      hasProductFormat: !!details.product_format,
+      productFormat: details.product_format || 'NOT_FOUND',
+      hasFileFormat: !!details.file_format,
+      fileFormat: details.file_format || 'NOT_FOUND',
+      descriptionLength: (details.description || '').length,
+      genreCount: details.genre ? details.genre.length : 0,
+      tagCount: details.tags ? details.tags.length : 0,
+      allExtractedFields: Object.keys(details).reduce((acc, key) => {
+        acc[key] = details[key];
+        return acc;
+      }, {})
     });
 
     return details;
   }
 
   /**
-   * Generiert eine eindeutige ID für ein Spiel
-   * @param {string} productId - DLSite Produkt-ID
-   * @param {number} internalId - Interne ID des Spiels (optional)
-   * @returns {string} - Eindeutige ID
+   * Generates a unique ID for a game
+   * @param {string} productId - DLSite product ID
+   * @param {number} internalId - Internal game ID (optional)
+   * @returns {string} - Unique ID
    */
   generateGameId(productId, internalId = null) {
-    let gameId;
-    
     if (!productId) {
-      // Fallback für den Fall, dass keine Produkt-ID vorhanden ist
-      gameId = `dlsite_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
-      logger.warn('DLSITE_ID', 'Keine Produkt-ID vorhanden, generiere Fallback-ID', { gameId });
-    } else {
-      const prefix = internalId ? `${String(internalId).padStart(5, '0')}_` : '';
-      gameId = `${prefix}dlsite_${productId.toLowerCase()}`;
-      logger.debug('DLSITE_ID', 'Game-ID generiert', { 
-        productId,
-        internalId,
-        gameId 
+      // Fallback if no product ID available
+      const fallbackId = `dlsite_${Date.now()}_${Math.random().toString(36).substring(2, 8)}`;
+      const logger = getLogger();
+      logger.warn('DLSITE_ID', 'No product ID available, generating fallback ID', {
+        gameId: fallbackId
       });
+      return fallbackId;
     }
     
-    return gameId;
+    const prefix = internalId ? `${String(internalId).padStart(5, '0')}_` : '';
+    return `${prefix}dlsite_${productId.toLowerCase()}`;
   }
 
   /**
-   * Lädt ein Bild herunter und speichert es im Assets-Ordner
-   * @param {string} imageUrl - URL des Bildes
-   * @param {string} productId - DLSite Produkt-ID
-   * @param {number} internalId - Interne ID des Spiels (optional)
-   * @returns {Promise<string>} - Lokaler Pfad zum gespeicherten Bild
+   * Downloads an image and saves it to the assets folder
+   * @param {string} imageUrl - Image URL
+   * @param {string} productId - DLSite product ID
+   * @param {number} internalId - Internal game ID (optional)
+   * @returns {Promise<string>} - Local path to saved image
    */
   async downloadImage(imageUrl, productId, internalId = null) {
-    logger.startTimer('download_image');
-    
     try {
+      const logger = getLogger();
+      
       if (!imageUrl) {
-        logger.warn('DLSITE_IMAGE', 'Keine Bild-URL zum Herunterladen angegeben');
+        logger.warn('DLSITE_IMAGE', 'No image URL provided for download');
         return null;
       }
       
-      // Loggen der Eingabeparameter für Debugging
-      logger.info('DLSITE_IMAGE', 'Beginne Bild-Download', { 
+      logger.info('DLSITE_IMAGE', 'Starting image download', {
         imageUrl,
         productId,
-        internalId 
+        internalId
       });
       
-      // Stelle sicher, dass die ProductId definiert ist
+      // Ensure ProductId is defined
       if (!productId || productId === 'undefined' || productId === 'null') {
-        logger.warn('DLSITE_IMAGE', 'Keine gültige Produkt-ID für die Bildbenennung angegeben');
-        // Versuche die ID aus der URL zu extrahieren
+        logger.warn('DLSITE_IMAGE', 'No valid product ID provided for image naming');
+        // Try to extract ID from URL
         const idMatch = imageUrl.match(/[BRV]J\d{6,8}/i);
         if (idMatch) {
           productId = idMatch[0].toUpperCase();
-          logger.info('DLSITE_IMAGE', 'Produkt-ID aus URL extrahiert', { productId });
+          logger.info('DLSITE_IMAGE', 'Product ID extracted from URL', { productId });
         } else {
           productId = "unknown";
-          logger.warn('DLSITE_IMAGE', 'Konnte keine Produkt-ID extrahieren, verwende "unknown"');
         }
       }
       
-      // Stelle sicher, dass die URL absolut ist
+      // Ensure URL is absolute
       const absoluteUrl = this._ensureAbsoluteUrl(imageUrl);
       
       if (!absoluteUrl) {
-        logger.warn('DLSITE_IMAGE', `Konnte keine absolute URL aus ${imageUrl} erstellen`);
+        logger.warn('DLSITE_IMAGE', `Could not create absolute URL from ${imageUrl}`);
         return null;
       }
       
-      // Prüfe Cache, ob das Bild bereits heruntergeladen wurde
+      // Check cache if image was already downloaded
       const cacheKey = absoluteUrl;
       if (this.imageCache.has(cacheKey)) {
-        const cachedPath = this.imageCache.get(cacheKey);
-        logger.debug('DLSITE_IMAGE', 'Bild aus Cache zurückgegeben', { 
-          cacheKey,
-          cachedPath 
-        });
-        return cachedPath;
+        return this.imageCache.get(cacheKey);
       }
-      
-      logger.debug('DLSITE_IMAGE', 'Lade Bild herunter', { absoluteUrl });
       
       const response = await this._makeRequest(absoluteUrl, {
         headers: this.headers
       });
       
       if (!response.ok) {
-        throw new Error(`HTTP Fehler beim Bilddownload: ${response.status}`);
+        throw new Error(`HTTP error during image download: ${response.status}`);
       }
       
-      // Verwende eine Hexadezimalzahl mit 5 Stellen für die interne ID
-      // Wenn keine interne ID angegeben wurde, verwende 00001 für das erste Spiel
+      // Use hexadecimal number with 5 digits for internal ID
       let idPrefix;
       if (internalId) {
-        idPrefix = internalId.toString(16).padStart(5, '0'); // Hexadezimal mit 5 Stellen
+        idPrefix = internalId.toString(16).padStart(5, '0');
       } else {
-        // Simuliere interne ID 1 wenn keine angegeben
-        idPrefix = "00001";
+        idPrefix = "00001"; // Default for first game
       }
       
       const extension = path.extname(absoluteUrl) || '.jpg';
@@ -626,344 +603,247 @@ class DLSiteClient {
       const filePath = path.join(this.assetsPath, fileName);
       const webPath = `assets/games/${fileName}`.replace(/\\/g, '/');
       
-      logger.debug('DLSITE_IMAGE', 'Speichere Bild lokal', { 
-        fileName,
-        filePath,
-        webPath 
-      });
-      
-      // Stream zum Speichern des Bildes
+      // Stream for saving the image
       const buffer = await response.buffer();
       fs.writeFileSync(filePath, buffer);
       
-      logger.logFileOperation('WRITE_FILE', filePath, true);
-      
-      const downloadTime = logger.endTimer('download_image');
-      
-      logger.info('DLSITE_IMAGE', 'Bild erfolgreich heruntergeladen', { 
+      logger.info('DLSITE_IMAGE', 'Image successfully downloaded', {
         absoluteUrl,
-        filePath,
+        filePath: webPath,
         webPath,
-        fileSize: buffer.length,
-        downloadTime: `${downloadTime.toFixed(2)}ms` 
+        fileSize: buffer.length
       });
       
-      // Speichere Pfad im Cache
+      // Save path in cache
       this.imageCache.set(cacheKey, webPath);
       
       return webPath;
     } catch (error) {
-      logger.endTimer('download_image');
-      logger.error('DLSITE_IMAGE', 'Fehler beim Herunterladen des Bildes', { 
-        imageUrl,
-        productId,
-        internalId 
-      }, error);
+      const logger = getLogger();
+      logger.error('DLSITE_IMAGE', 'Error downloading image', { 
+        imageUrl, 
+        productId, 
+        error: error.message 
+      });
       return null;
     }
   }
 
-  /**
-   * Erstellt ein Game-Info-Objekt aus den kombinierten API- und HTML-Daten
-   * @param {Object} basicInfo - Grundlegende Informationen vom AJAX-API
-   * @param {Object} details - Detaillierte Informationen vom HTML-Parsing
-   * @param {number} internalId - Interne ID des Spiels (optional)
-   * @returns {Promise<Object>} - Für den Dust Game Manager formatierte Spielinformationen
+/**
+   * Creates a game info object from combined API and HTML data
+   * @param {Object} basicInfo - Basic information from AJAX API
+   * @param {Object} details - Detailed information from HTML parsing
+   * @param {number} internalId - Internal game ID (optional)
+   * @returns {Promise<Object>} - Game information formatted for Dust Game Manager
    */
   async createGameInfo(basicInfo, details, internalId = null) {
-    logger.startTimer('create_game_info');
+    const logger = getLogger();
     
-    // Stelle sicher, dass wir eine gültige Produkt-ID haben
+    // Ensure we have a valid product ID
     const productId = (basicInfo && basicInfo.product_id) ? basicInfo.product_id : 
                     (details && details.productId) ? details.productId : null;
     
-    logger.info('DLSITE_PROCESS', 'Erstelle Game-Info-Objekt', { 
+    logger.info('DLSITE_PROCESS', 'Creating game info object', {
       productId,
       internalId,
       hasBasicInfo: !!basicInfo,
-      hasDetails: !!details 
+      hasDetails: !!details
     });
     
-    // Generiere eine eindeutige ID für das Spiel
+    // Generate unique ID for the game
     const gameId = this.generateGameId(productId, internalId);
     
-    // Bild herunterladen
+    // Download image
     let coverImagePath = null;
     if (details && details.coverImage) {
-      logger.debug('DLSITE_PROCESS', 'Lade Cover-Bild aus Details', { 
-        coverImage: details.coverImage 
-      });
       coverImagePath = await this.downloadImage(details.coverImage, productId, internalId);
     } else if (basicInfo && basicInfo.work_image) {
-      logger.debug('DLSITE_PROCESS', 'Lade Cover-Bild aus Basic-Info', { 
-        workImage: basicInfo.work_image 
-      });
       coverImagePath = await this.downloadImage(basicInfo.work_image, productId, internalId);
-    } else {
-      logger.debug('DLSITE_PROCESS', 'Kein Cover-Bild verfügbar');
     }
     
-    // Kombiniere Tags und Genres für vollständigere Informationen
-    const allTags = [...new Set([
-      ...(details && details.genre ? details.genre : []),
-      ...(details && details.tags ? details.tags : [])
-    ])];
+    // Process genres - filter out technical metadata
+    const filteredGenres = (details && details.genre) ? 
+      details.genre.filter(genre => {
+        // Filter out technical metadata that shouldn't be in genres
+        const excludeFromGenres = [
+          'R18', 'All-ages',
+          'Role-playing', 'Visual Novel', 'Simulation', 'Adventure', 'Action', 'Strategy',
+          'Voice', 'Music', 'Sound',
+          'Application', 'HTML', 'Flash', 'Unity',
+          'Japanese', 'English', 'Chinese', 'Korean',
+          'Windows', 'Mac', 'Android', 'iOS'
+        ];
+        return !excludeFromGenres.includes(genre);
+      }) : [];
     
-    logger.debug('DLSITE_PROCESS', 'Tags und Genres kombiniert', { 
-      genreCount: details && details.genre ? details.genre.length : 0,
-      tagCount: details && details.tags ? details.tags.length : 0,
-      combinedCount: allTags.length 
-    });
+    // Combine filtered genres with tags for more complete information
+    const allTags = [...new Set([
+      ...filteredGenres,
+      ...(details && details.tags ? details.tags.filter(tag => !['R18', 'Application', 'Japanese', 'Role-playing', 'Voice'].includes(tag)) : [])
+    ])];
     
     const gameInfo = {
       id: gameId,
       title: (details && details.work_name) || (basicInfo && basicInfo.work_name) || `DLSite Game ${productId}`,
-      developer: (details && details.circle) || (basicInfo && basicInfo.maker_name) || "Unbekannter Entwickler",
+      developer: (details && details.circle) || (basicInfo && basicInfo.maker_name) || "Unknown Developer",
       publisher: (details && details.publisher) || (details && details.circle) || (basicInfo && basicInfo.maker_name) || "DLSite",
-      genre: (details && details.genre && details.genre.length > 0) ? details.genre[0] : "Visual Novel",
-      description: (details && details.description) || (basicInfo && basicInfo.description) || `Ein Spiel von DLSite mit der ID ${productId}`,
-      coverImage: coverImagePath || "", // Lokaler Pfad statt URL
+      genre: filteredGenres.length > 0 ? filteredGenres[0] : "Visual Novel", // First actual genre, not technical metadata
+      description: (details && details.description) || (basicInfo && basicInfo.description) || `A game from DLSite with ID ${productId}`,
+      coverImage: coverImagePath || "",
       source: "DLSite",
-      // Weitere DLSite-spezifische Informationen
+      
+      // Additional DLSite-specific information
       dlsiteId: productId,
       dlsiteUrl: `https://www.dlsite.com/maniax/work/=/product_id/${productId}.html`,
       dlsiteCircle: (details && details.circle) || (basicInfo && basicInfo.maker_name),
       dlsiteTags: allTags,
       dlsiteVoiceActors: (details && details.voice_actor) || [],
       dlsiteReleaseDate: (details && details.release_date) || (basicInfo && basicInfo.regist_date) || "",
+      dlsiteUpdateDate: (details && details.update_date) || "",
       dlsiteFileSize: (details && details.file_size) || "",
-      // Weitere Metadaten
-      language: (details && details.language) || "Japanisch",
+      dlsiteAgeRating: (details && details.age_rating) || "",
+      dlsiteProductFormat: (details && details.product_format) || "",
+      dlsiteFileFormat: (details && details.file_format) || "",
+      
+      // Additional metadata
+      language: (details && details.language) || "Japanese",
       authors: (details && details.author) || [],
       illustrators: (details && details.illustration) || [],
-      scenario: (details && details.scenario) || []
+      scenario: (details && details.scenario) || [],
+      
+      // Genre list for search functionality
+      genreList: filteredGenres,
+      productFormat: (details && details.product_format) || ""
     };
     
-    const createTime = logger.endTimer('create_game_info');
-    
-    logger.info('DLSITE_PROCESS', 'Game-Info-Objekt erstellt', { 
-      gameId: gameInfo.id,
+    logger.info('DLSITE_PROCESS', 'Game info object created', {
+      gameId,
       title: gameInfo.title,
       developer: gameInfo.developer,
       hasCoverImage: !!gameInfo.coverImage,
       tagCount: gameInfo.dlsiteTags.length,
-      createTime: `${createTime.toFixed(2)}ms` 
+      genreCount: gameInfo.genreList.length,
+      releaseDate: gameInfo.dlsiteReleaseDate,
+      updateDate: gameInfo.dlsiteUpdateDate,
+      fileSize: gameInfo.dlsiteFileSize,
+      ageRating: gameInfo.dlsiteAgeRating,
+      productFormat: gameInfo.dlsiteProductFormat,
+      voiceActorCount: gameInfo.dlsiteVoiceActors.length
     });
     
     return gameInfo;
   }
 
   /**
-   * Hauptmethode zum Abrufen aller Spielinformationen
-   * @param {string} productId - DLSite Produkt-ID
-   * @param {string} category - DLSite-Kategorie (Standard: 'maniax')
-   * @param {number} internalId - Interne ID des Spiels (optional)
-   * @returns {Promise<Object>} - Vollständige Spielinformationen
+   * Main method to retrieve all game information with proper English support
+   * @param {string} productId - DLSite product ID
+   * @param {string} category - DLSite category (default: 'maniax')
+   * @param {number} internalId - Internal game ID (optional)
+   * @returns {Promise<Object>} - Complete game information
    */
   async getGameInfo(productId, category = 'maniax', internalId = null) {
-    logger.startTimer('get_game_info_complete');
-    logger.info('DLSITE_MAIN', 'Beginne vollständigen Informationsabruf', { 
-      productId,
-      category,
-      internalId 
-    });
-    
     try {
-      // Grundlegende Infos vom API abrufen
+      const logger = getLogger();
+      logger.info('DLSITE_MAIN', 'Starting complete information retrieval', {
+        productId,
+        category,
+        internalId
+      });
+
+      // Retrieve basic info from API
       let basicInfo = null;
       try {
-        logger.debug('DLSITE_MAIN', 'Rufe grundlegende Informationen ab');
         basicInfo = await this.getProductInfo(productId);
-        logger.info('DLSITE_MAIN', 'Grundlegende Informationen erfolgreich abgerufen', { 
+        logger.info('DLSITE_MAIN', 'Basic information successfully retrieved', {
           productId,
-          title: basicInfo.work_name 
+          title: basicInfo.work_name
         });
       } catch (error) {
-        logger.warn('DLSITE_MAIN', `Konnte keine grundlegenden Infos für ${productId} abrufen`, { 
-          productId 
-        }, error);
-        // Erstelle ein minimales basicInfo-Objekt
+        logger.warn('DLSITE_MAIN', `Could not retrieve basic info for ${productId}`, { error: error.message });
         basicInfo = { product_id: productId };
       }
       
-      // Detaillierte Infos vom HTML abrufen
+      // Retrieve detailed info from HTML
       let details = null;
       try {
-        logger.debug('DLSITE_MAIN', 'Rufe detaillierte Informationen ab');
         details = await this.getWorkDetails(productId, category);
-        logger.info('DLSITE_MAIN', 'Detaillierte Informationen erfolgreich abgerufen', { 
+        logger.info('DLSITE_MAIN', 'Detailed information successfully retrieved', {
           productId,
           title: details.work_name,
-          fieldsCount: Object.keys(details).length 
+          fieldsCount: Object.keys(details).length
         });
       } catch (error) {
-        logger.warn('DLSITE_MAIN', `Konnte keine detaillierten Infos für ${productId} abrufen`, { 
-          productId,
-          category 
-        }, error);
-        // Erstelle ein minimales details-Objekt
+        logger.warn('DLSITE_MAIN', `Could not retrieve detailed info for ${productId}`, { error: error.message });
         details = { productId: productId };
       }
       
-      // Beide Informationsquellen kombinieren
-      logger.debug('DLSITE_MAIN', 'Kombiniere Informationsquellen');
+      // Combine both information sources
       const gameInfo = await this.createGameInfo(basicInfo, details, internalId);
       
-      const totalTime = logger.endTimer('get_game_info_complete');
-      
-      logger.info('DLSITE_MAIN', 'Vollständiger Informationsabruf abgeschlossen', { 
+      logger.info('DLSITE_MAIN', 'Complete information retrieval finished', {
         productId,
         gameId: gameInfo.id,
         title: gameInfo.title,
-        totalTime: `${totalTime.toFixed(2)}ms`,
-        success: !gameInfo.error 
+        success: true
       });
       
       return gameInfo;
     } catch (error) {
-      logger.endTimer('get_game_info_complete');
-      logger.error('DLSITE_MAIN', 'Fehler beim Abrufen der Spielinformationen', { 
-        productId,
-        category,
-        internalId 
-      }, error);
+      const logger = getLogger();
+      logger.error('DLSITE_MAIN', 'Error retrieving game information', { 
+        productId, 
+        category, 
+        internalId, 
+        error: error.message 
+      });
       
-      // Erstelle ein Fallback-Objekt mit einer generierten ID
+      // Create fallback object with generated ID
       const gameId = this.generateGameId(productId, internalId);
-      const fallbackInfo = {
+      return {
         id: gameId,
         error: true,
-        message: `Fehler: ${error.message}`,
+        message: `Error: ${error.message}`,
         title: `DLSite Game ${productId}`,
         developer: "Unknown Developer",
         publisher: "DLSite",
         genre: "Visual Novel",
-        description: `Ein Spiel von DLSite mit der ID ${productId}`,
+        description: `A game from DLSite with ID ${productId}`,
         coverImage: "",
         source: "DLSite",
         dlsiteId: productId,
         dlsiteUrl: `https://www.dlsite.com/maniax/work/=/product_id/${productId}.html`
       };
-      
-      logger.info('DLSITE_MAIN', 'Fallback-Informationen erstellt', { 
-        productId,
-        gameId: fallbackInfo.id 
-      });
-      
-      return fallbackInfo;
     }
   }
   
   /**
-   * Versucht, eine DLSite-ID aus einem Ordnerpfad zu extrahieren
-   * @param {string} folderPath - Der zu prüfende Ordnerpfad
-   * @returns {string|null} - Die gefundene DLSite-ID oder null
+   * Attempts to extract a DLSite ID from a folder path
+   * @param {string} folderPath - Folder path to check
+   * @returns {string|null} - Found DLSite ID or null
    */
   extractDLSiteIdFromPath(folderPath) {
-    logger.debug('DLSITE_EXTRACT', 'Extrahiere DLSite-ID aus Pfad', { folderPath });
-    
     try {
-      // Versuche im Pfad und allen Unterverzeichnissen zu suchen
+      // Try to search in path and all subdirectories
       const match = folderPath.match(/[BRV]J\d{6,8}/i);
       if (match) {
-        const extractedId = match[0].toUpperCase();
-        logger.info('DLSITE_EXTRACT', 'DLSite-ID aus Pfad extrahiert', { 
-          folderPath,
-          extractedId 
-        });
-        return extractedId;
+        return match[0].toUpperCase();
       }
       
-      // Versuche den Ordnernamen zu prüfen
+      // Try to check folder name
       const dirName = path.basename(folderPath);
       const dirMatch = dirName.match(/[BRV]J\d{6,8}/i);
       if (dirMatch) {
-        const extractedId = dirMatch[0].toUpperCase();
-        logger.info('DLSITE_EXTRACT', 'DLSite-ID aus Ordnername extrahiert', { 
-          folderPath,
-          dirName,
-          extractedId 
-        });
-        return extractedId;
+        return dirMatch[0].toUpperCase();
       }
       
-      logger.debug('DLSITE_EXTRACT', 'Keine DLSite-ID im Pfad gefunden', { folderPath });
       return null;
     } catch (error) {
-      logger.error('DLSITE_EXTRACT', `Fehler beim Extrahieren der DLSite-ID aus dem Pfad`, { 
-        folderPath 
-      }, error);
+      const logger = getLogger();
+      logger.warn('DLSITE_EXTRACT', `Error extracting DLSite ID from path`, { 
+        folderPath, 
+        error: error.message 
+      });
       return null;
-    }
-  }
-
-  /**
-   * Gibt Cache-Statistiken zurück
-   */
-  getCacheStats() {
-    const stats = {
-      imageCacheSize: this.imageCache.size,
-      imageCacheEntries: Array.from(this.imageCache.keys()),
-      assetsPath: this.assetsPath,
-      locale: this.locale
-    };
-    
-    logger.debug('DLSITE_CACHE', 'Cache-Statistiken abgerufen', stats);
-    return stats;
-  }
-
-  /**
-   * Leert den Image-Cache
-   */
-  clearImageCache() {
-    const previousSize = this.imageCache.size;
-    this.imageCache.clear();
-    
-    logger.info('DLSITE_CACHE', 'Image-Cache geleert', { 
-      previousSize,
-      currentSize: this.imageCache.size 
-    });
-  }
-
-  /**
-   * Validiert eine DLSite-Produkt-ID
-   * @param {string} productId - Die zu validierende Produkt-ID
-   * @returns {boolean} - True wenn gültig, false andernfalls
-   */
-  isValidProductId(productId) {
-    const isValid = /^[BRV]J\d{6,8}$/i.test(productId);
-    
-    logger.debug('DLSITE_VALIDATE', 'Produkt-ID Validierung', { 
-      productId,
-      isValid 
-    });
-    
-    return isValid;
-  }
-
-  /**
-   * Bereinigt temporäre Dateien und Cache
-   */
-  cleanup() {
-    logger.info('DLSITE_CLEANUP', 'Beginne Cleanup');
-    
-    try {
-      this.clearImageCache();
-      
-      // Prüfe auf verwaiste Bilddateien
-      if (fs.existsSync(this.assetsPath)) {
-        const files = fs.readdirSync(this.assetsPath);
-        const dlsiteFiles = files.filter(f => f.includes('_dlsite_'));
-        
-        logger.debug('DLSITE_CLEANUP', 'DLSite-Dateien gefunden', { 
-          totalFiles: files.length,
-          dlsiteFiles: dlsiteFiles.length 
-        });
-      }
-      
-      logger.info('DLSITE_CLEANUP', 'Cleanup abgeschlossen');
-    } catch (error) {
-      logger.error('DLSITE_CLEANUP', 'Fehler beim Cleanup', null, error);
     }
   }
 }

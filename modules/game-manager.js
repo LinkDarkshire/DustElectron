@@ -9,206 +9,158 @@ const platformManager = require('./platform-manager');
 const DLSiteClient = require('../platforms/dlsite-api');
 const { getLogger } = require('./logger');
 
-const logger = getLogger();
-
 /**
- * Scannt nach installierten Spielen
- * @returns {Array} Liste der gefundenen Spiele
+ * Scans for installed games
+ * @returns {Array} List of found games
  */
 async function scanGames() {
-  logger.startTimer('scan_games');
-  logger.info('GAME_SCAN', 'Beginne Scan nach installierten Spielen');
-  
   const games = [];
   
   try {
-    // Prüfe ob Spieleverzeichnis existiert
+    const logger = getLogger();
+    logger.info('GAME_SCAN', 'Starting scan for installed games');
+    
+    // Search directory for folders
     if (!fs.existsSync(appConfig.gamesDirectoryPath)) {
-      logger.warn('GAME_SCAN', 'Spieleverzeichnis existiert nicht', { 
-        path: appConfig.gamesDirectoryPath 
+      logger.warn('GAME_SCAN', 'Games directory does not exist', {
+        path: appConfig.gamesDirectoryPath
       });
       return games;
     }
     
-    logger.debug('GAME_SCAN', 'Lese Spieleverzeichnis', { 
-      path: appConfig.gamesDirectoryPath 
-    });
-    
-    // Durchsuche das Verzeichnis nach Ordnern
     const gameDirectories = fs.readdirSync(appConfig.gamesDirectoryPath)
       .filter(file => {
         const fullPath = path.join(appConfig.gamesDirectoryPath, file);
-        const isDirectory = fs.statSync(fullPath).isDirectory();
-        
-        if (isDirectory) {
-          logger.trace('GAME_SCAN', 'Verzeichnis gefunden', { directory: file });
-        }
-        
-        return isDirectory;
+        return fs.statSync(fullPath).isDirectory();
       });
     
-    logger.info('GAME_SCAN', `${gameDirectories.length} Spieleverzeichnisse gefunden`);
+    logger.info('GAME_SCAN', `Found ${gameDirectories.length} game directories`);
     
-    // Suche in jedem Ordner nach dustgrain.json
+    // Search each folder for dustgrain.json
     for (const dir of gameDirectories) {
-      logger.debug('GAME_SCAN', `Prüfe Verzeichnis: ${dir}`);
-      
-      try {
-        const gameInfo = fileManager.readDustgrain(dir);
-        if (gameInfo) {
-          games.push(gameInfo);
-          logger.debug('GAME_SCAN', 'Spiel gefunden', { 
-            directory: dir,
-            title: gameInfo.title,
-            id: gameInfo.internalId 
-          });
-        } else {
-          logger.debug('GAME_SCAN', 'Keine dustgrain.json gefunden', { directory: dir });
-        }
-      } catch (error) {
-        logger.error('GAME_SCAN', `Fehler beim Lesen von ${dir}`, { directory: dir }, error);
+      const gameInfo = fileManager.readDustgrain(dir);
+      if (gameInfo) {
+        games.push(gameInfo);
       }
     }
     
-    const scanTime = logger.endTimer('scan_games');
-    logger.info('GAME_SCAN', 'Scan abgeschlossen', { 
+    logger.info('GAME_SCAN', 'Scan completed', {
       gamesFound: games.length,
-      scanTime: `${scanTime.toFixed(2)}ms`,
-      directories: gameDirectories.length 
+      directories: gameDirectories.length
     });
-    
   } catch (err) {
-    logger.endTimer('scan_games');
-    logger.error('GAME_SCAN', 'Fehler beim Scannen nach dustgrain-Dateien', null, err);
+    const logger = getLogger();
+    logger.error('GAME_SCAN', 'Error scanning for dustgrain files', { error: err.message });
   }
   
   return games;
 }
 
 /**
- * Erlaubt die Auswahl eines Spielordners
- * @param {Event} event - Das IPC Event
- * @param {string} platform - Die Spieleplattform
- * @param {string} importType - Der Importtyp (single oder folder)
- * @returns {Object} Das Ergebnis der Ordnerauswahl
+ * Allows selection of a game folder
+ * @param {Event} event - The IPC Event
+ * @param {string} platform - The game platform
+ * @param {string} importType - The import type (single or folder)
+ * @returns {Object} The result of folder selection
  */
 async function selectGameFolder(event, platform, importType) {
-  logger.startTimer('select_game_folder');
-  logger.logIPC('select-game-folder', 'RECEIVE', { platform, importType });
-  
   try {
+    const logger = getLogger();
+    logger.info('SELECT_FOLDER', 'Starting folder selection', {
+      platform,
+      importType
+    });
+    
     const options = {
-      title: importType === 'single' ? 'Spieleverzeichnis auswählen' : 'Ordner mit mehreren Spielen auswählen',
+      title: importType === 'single' ? 'Select game directory' : 'Select folder with multiple games',
       properties: ['openDirectory']
     };
-    
-    logger.debug('SELECT_FOLDER', 'Öffne Ordnerauswahl-Dialog', { options });
     
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), options);
     
     if (canceled || filePaths.length === 0) {
-      logger.info('SELECT_FOLDER', 'Ordnerauswahl abgebrochen vom Benutzer');
-      return { success: false, message: "Auswahl abgebrochen" };
+      return { success: false, message: "Selection cancelled" };
     }
     
     const selectedDir = filePaths[0];
     const dirName = path.basename(selectedDir);
     
-    logger.info('SELECT_FOLDER', 'Ordner ausgewählt', { 
+    logger.info('SELECT_FOLDER', 'Folder selected', {
       selectedDir,
       dirName,
       platform,
-      importType 
+      importType
     });
     
-    // Suche nach ausführbaren Dateien
-    logger.debug('SELECT_FOLDER', 'Suche nach ausführbaren Dateien');
+    // Search for executable files
     const executableFiles = fileManager.findExecutables(selectedDir);
     const executable = executableFiles.length > 0 ? executableFiles[0] : '';
     
-    logger.debug('SELECT_FOLDER', 'Ausführbare Dateien gefunden', { 
-      count: executableFiles.length,
-      files: executableFiles,
-      selectedExecutable: executable 
-    });
-    
-    // Versuche, ID aus dem Ordnernamen zu extrahieren, falls es sich um DLSite oder Steam handelt
+    // Try to extract ID from folder name if it's DLSite or Steam
     let gameDetails = {};
     
     if (platform === 'dlsite') {
-      logger.debug('DLSITE_DETECTION', 'Suche nach DLSite-ID im Pfad');
-      
-      // Suche nach RJ/RE-Nummern im Pfad
+      // Search for RJ/RE numbers in path
       const rjMatch = selectedDir.match(/RJ\d+/i);
       const reMatch = selectedDir.match(/RE\d+/i);
       const dlsiteId = rjMatch ? rjMatch[0].toUpperCase() : (reMatch ? reMatch[0].toUpperCase() : null);
       
       if (dlsiteId) {
-        logger.info('DLSITE_DETECTION', `DLSite ID im Pfad gefunden: ${dlsiteId}`);
+        logger.info('DLSITE_DETECTION', 'DLSite ID found in path', { dlsiteId });
         
         try {
-          // DLSite-Client initialisieren
-          const dlsiteClient = new DLSiteClient();
+          // Initialize DLSite Client with NetworkManager
+          const networkManager = platformManager.getNetworkManager();
+          const dlsiteClient = new DLSiteClient(networkManager);
           
-          logger.startTimer('dlsite_info_fetch');
-          logger.debug('DLSITE_API', 'Rufe Spielinformationen ab', { dlsiteId });
-          
-          // Spielinformationen abrufen
+          // Retrieve game information
           const dlsiteInfo = await dlsiteClient.getGameInfo(dlsiteId, 'maniax');
-          
-          const fetchTime = logger.endTimer('dlsite_info_fetch');
-          logger.info('DLSITE_API', 'Spielinformationen erfolgreich abgerufen', { 
-            dlsiteId,
-            title: dlsiteInfo.title,
-            fetchTime: `${fetchTime.toFixed(2)}ms` 
-          });
           
           gameDetails = {
             ...dlsiteInfo,
             dlsiteId: dlsiteId,
             source: 'DLSite'
           };
+          
+          logger.info('DLSITE_DETECTION', 'DLSite game information retrieved', {
+            dlsiteId,
+            title: dlsiteInfo.title
+          });
         } catch (error) {
-          logger.error('DLSITE_API', `Fehler beim Abrufen der DLSite-Informationen`, { dlsiteId }, error);
-          // Grundlegende Informationen zurückgeben
+          logger.warn('DLSITE_DETECTION', 'Error retrieving DLSite information', {
+            dlsiteId,
+            error: error.message
+          });
+          // Return basic information
           gameDetails = {
             title: `DLSite Game ${dlsiteId}`,
             dlsiteId: dlsiteId,
             source: 'DLSite'
           };
         }
-      } else {
-        logger.debug('DLSITE_DETECTION', 'Keine DLSite-ID im Pfad gefunden');
       }
     } else if (platform === 'steam') {
-      logger.debug('STEAM_DETECTION', 'Suche nach Steam-App-ID');
-      
-      // Suche nach Steam-App-ID im Pfad oder in der steam_appid.txt Datei
+      // Search for Steam App ID in path or steam_appid.txt file
       let steamAppId = null;
       
-      // Suche nach steam_appid.txt
+      // Search for steam_appid.txt
       const steamAppIdPath = path.join(selectedDir, 'steam_appid.txt');
       if (fs.existsSync(steamAppIdPath)) {
         try {
           steamAppId = fs.readFileSync(steamAppIdPath, 'utf8').trim();
-          logger.info('STEAM_DETECTION', 'Steam App ID aus steam_appid.txt gelesen', { 
-            steamAppId,
-            filePath: steamAppIdPath 
-          });
         } catch (error) {
-          logger.error('STEAM_DETECTION', `Fehler beim Lesen der steam_appid.txt`, { 
-            filePath: steamAppIdPath 
-          }, error);
+          logger.warn('STEAM_DETECTION', 'Error reading steam_appid.txt', {
+            path: steamAppIdPath,
+            error: error.message
+          });
         }
-      } else {
-        logger.debug('STEAM_DETECTION', 'steam_appid.txt nicht gefunden');
       }
       
       if (steamAppId) {
-        logger.info('STEAM_DETECTION', `Steam App ID gefunden: ${steamAppId}`);
+        logger.info('STEAM_DETECTION', 'Steam App ID found', { steamAppId });
         
         try {
-          // Steam-Informationen abrufen können hier eingefügt werden
+          // Steam information can be retrieved here
           
           gameDetails = {
             title: dirName,
@@ -216,19 +168,18 @@ async function selectGameFolder(event, platform, importType) {
             source: 'Steam'
           };
         } catch (error) {
-          logger.error('STEAM_API', `Fehler beim Abrufen der Steam-Informationen`, { steamAppId }, error);
+          logger.warn('STEAM_DETECTION', 'Error retrieving Steam information', {
+            steamAppId,
+            error: error.message
+          });
           gameDetails = {
             title: dirName,
             steamAppId: steamAppId,
             source: 'Steam'
           };
         }
-      } else {
-        logger.debug('STEAM_DETECTION', 'Keine Steam App ID gefunden');
       }
     }
-    
-    const selectionTime = logger.endTimer('select_game_folder');
     
     const result = { 
       success: true, 
@@ -238,132 +189,120 @@ async function selectGameFolder(event, platform, importType) {
       gameDetails: gameDetails
     };
     
-    logger.info('SELECT_FOLDER', 'Ordnerauswahl erfolgreich abgeschlossen', { 
-      ...result,
-      selectionTime: `${selectionTime.toFixed(2)}ms` 
+    logger.info('SELECT_FOLDER', 'Folder selection completed successfully', {
+      success: true,
+      selectedFolder: selectedDir,
+      executable,
+      executableList: executableFiles,
+      gameDetails: {
+        id: gameDetails.id,
+        title: gameDetails.title,
+        developer: gameDetails.developer,
+        source: gameDetails.source
+      }
     });
     
     return result;
   } catch (error) {
-    logger.endTimer('select_game_folder');
-    logger.error('SELECT_FOLDER', "Fehler bei der Ordnerauswahl", null, error);
+    const logger = getLogger();
+    logger.error('SELECT_FOLDER', 'Error during folder selection', { error: error.message });
     return { 
       success: false, 
-      message: `Fehler: ${error.message || "Unbekannter Fehler"}`
+      message: `Error: ${error.message || "Unknown error"}`
     };
   }
 }
 
 /**
- * Ermöglicht die Auswahl einer ausführbaren Datei
- * @param {Event} event - Das IPC Event
- * @param {string} folderPath - Der Ordnerpfad
- * @returns {Object} Das Ergebnis der Auswahl
+ * Allows selection of an executable file
+ * @param {Event} event - The IPC Event
+ * @param {string} folderPath - The folder path
+ * @returns {Object} The selection result
  */
 async function selectExecutable(event, folderPath) {
-  logger.startTimer('select_executable');
-  logger.logIPC('select-executable', 'RECEIVE', { folderPath });
-  
   try {
+    const logger = getLogger();
+    logger.info('SELECT_EXECUTABLE', 'Starting executable selection', { folderPath });
+    
     const options = {
-      title: 'Ausführbare Datei auswählen',
+      title: 'Select executable file',
       defaultPath: folderPath,
       properties: ['openFile'],
       filters: appConfig.fileFilters.executables
     };
     
-    logger.debug('SELECT_EXECUTABLE', 'Öffne Dateiauswahl-Dialog', { options });
-    
     const { canceled, filePaths } = await dialog.showOpenDialog(getMainWindow(), options);
     
     if (canceled || filePaths.length === 0) {
-      logger.info('SELECT_EXECUTABLE', 'Dateiauswahl abgebrochen vom Benutzer');
       return {
         success: false,
-        message: "Auswahl abgebrochen"
+        message: "Selection cancelled"
       };
     }
     
-    // Extrahiere den relativen Pfad zur ausführbaren Datei
+    // Extract relative path to executable file
     const selectedFile = path.relative(folderPath, filePaths[0]);
     
-    const selectionTime = logger.endTimer('select_executable');
-    
-    logger.info('SELECT_EXECUTABLE', 'Ausführbare Datei ausgewählt', { 
-      selectedFile,
-      fullPath: filePaths[0],
-      relativePath: selectedFile,
-      selectionTime: `${selectionTime.toFixed(2)}ms` 
+    logger.info('SELECT_EXECUTABLE', 'Executable selected', {
+      folderPath,
+      selectedFile
     });
     
     return {
       success: true,
       selectedFile: selectedFile,
-      message: `Ausführbare Datei ausgewählt: ${selectedFile}`
+      message: `Executable file selected: ${selectedFile}`
     };
   } catch (error) {
-    logger.endTimer('select_executable');
-    logger.error('SELECT_EXECUTABLE', 'Fehler bei der Auswahl der ausführbaren Datei', { folderPath }, error);
+    const logger = getLogger();
+    logger.error('SELECT_EXECUTABLE', 'Error selecting executable file', {
+      folderPath,
+      error: error.message
+    });
     return {
       success: false,
-      message: `Fehler: ${error.message}`
+      message: `Error: ${error.message}`
     };
   }
 }
 
 /**
- * Fügt ein Spiel mit einem bestimmten Pfad hinzu
- * @param {Event} event - Das IPC Event
- * @param {Object} gameInfo - Die Spielinformationen
- * @param {string} gameFolder - Der Spielordner
- * @param {string} executablePath - Pfad zur ausführbaren Datei
- * @returns {Object} Das Ergebnis des Hinzufügens
+ * Adds a game with a specific path
+ * @param {Event} event - The IPC Event
+ * @param {Object} gameInfo - The game information
+ * @param {string} gameFolder - The game folder
+ * @param {string} executablePath - Path to executable file
+ * @returns {Object} The result of adding
  */
 async function addGameWithPath(event, gameInfo, gameFolder, executablePath) {
-  logger.startTimer('add_game');
-  logger.logIPC('add-game-with-path', 'RECEIVE', { 
-    gameTitle: gameInfo.title,
-    gameFolder,
-    executablePath 
-  });
-  
   try {
-    // Verzeichnisnamen aus dem Pfad extrahieren
-    const dirName = path.basename(gameFolder);
-    
-    logger.debug('ADD_GAME', 'Verarbeite Spielinformationen', { 
-      dirName,
+    const logger = getLogger();
+    logger.info('ADD_GAME', 'Starting game addition', {
       gameFolder,
       executablePath,
-      gameInfo: {
-        title: gameInfo.title,
-        source: gameInfo.source,
-        dlsiteId: gameInfo.dlsiteId
-      }
+      gameTitle: gameInfo.title
     });
     
-    // Aktuelle Spielliste abrufen, um nächste ID zu bestimmen
+    // Extract directory name from path
+    const dirName = path.basename(gameFolder);
+    
+    // Get current game list to determine next ID
     const existingGames = await scanGames();
     const nextId = existingGames.length + 1;
     
-    logger.debug('ADD_GAME', 'ID-Generierung', { 
-      existingGamesCount: existingGames.length,
-      nextId 
-    });
-    
-    // Dustgrain-Datei erstellen
+    // Create dustgrain file
     const dustgrain = {
-      internalId: nextId, // Interne ID hinzufügen
+      internalId: nextId, // Add internal ID
       title: gameInfo.title || dirName,
       executable: executablePath,
       executablePath: gameFolder,
       version: gameInfo.version || "1.0",
-      genre: gameInfo.genre || "Sonstiges",
+      genre: gameInfo.genre || "Other",
       releaseDate: gameInfo.releaseDate || new Date().toISOString().split('T')[0],
-      developer: gameInfo.developer || "Unbekannt",
-      publisher: gameInfo.publisher || "Unbekannt",
+      developer: gameInfo.developer || "Unknown",
+      publisher: gameInfo.publisher || "Unknown",
       description: gameInfo.description || "",
-      source: gameInfo.source || "Lokal",
+      source: gameInfo.source || "Local",
       tags: gameInfo.tags || [],
       coverImage: gameInfo.coverImage ? gameInfo.coverImage.replace(/\\/g, '/') : "",
       screenshots: gameInfo.screenshots || [],
@@ -372,127 +311,119 @@ async function addGameWithPath(event, gameInfo, gameFolder, executablePath) {
       installed: true,
       installDate: new Date().toISOString(),
       
-      // Plattformspezifische Informationen
+      // Platform-specific information
       steamAppId: gameInfo.steamAppId || null,
       dlsiteId: gameInfo.dlsiteId || null,
       dlsiteCategory: gameInfo.dlsiteCategory || null,
+      dlsiteUrl: gameInfo.dlsiteUrl || null,
+      dlsiteCircle: gameInfo.dlsiteCircle || null,
+      dlsiteTags: gameInfo.dlsiteTags || [],
+      dlsiteVoiceActors: gameInfo.dlsiteVoiceActors || [],
+      dlsiteReleaseDate: gameInfo.dlsiteReleaseDate || "",
+      dlsiteFileSize: gameInfo.dlsiteFileSize || "",
+      language: gameInfo.language || "Unknown",
+      authors: gameInfo.authors || [],
+      illustrators: gameInfo.illustrators || [],
+      scenario: gameInfo.scenario || [],
       itchioUrl: gameInfo.itchioUrl || null,
       
       dustVersion: "1.0"
     };
     
-    logger.debug('ADD_GAME', 'Dustgrain-Objekt erstellt', { 
-      id: dustgrain.internalId,
-      title: dustgrain.title,
-      source: dustgrain.source,
-      dustgrainKeys: Object.keys(dustgrain) 
-    });
-    
-    // Speichern der dustgrain-Datei
-    logger.debug('ADD_GAME', 'Speichere dustgrain-Datei', { dirName });
+    // Save dustgrain file
     const success = fileManager.writeDustgrain(dirName, dustgrain);
     
-    const addTime = logger.endTimer('add_game');
-    
     if (success) {
-      logger.logGameAction('ADD_GAME_SUCCESS', dustgrain.internalId, dustgrain.title, { 
-        directory: dirName,
-        addTime: `${addTime.toFixed(2)}ms` 
+      logger.info('ADD_GAME', 'Game added successfully', {
+        gameId: nextId,
+        gameTitle: dustgrain.title,
+        directory: dirName
       });
       
       return { 
         success: true, 
         dustgrain,
-        message: `Spiel "${dustgrain.title}" erfolgreich hinzugefügt.`
+        message: `Game "${dustgrain.title}" added successfully.`
       };
     } else {
-      logger.error('ADD_GAME', 'Fehler beim Speichern der Spielinformationen', { 
-        dirName,
-        addTime: `${addTime.toFixed(2)}ms` 
+      logger.error('ADD_GAME', 'Error saving game information', {
+        gameTitle: dustgrain.title,
+        directory: dirName
       });
-      
       return { 
         success: false, 
-        message: "Fehler beim Speichern der Spielinformationen"
+        message: "Error saving game information"
       };
     }
   } catch (error) {
-    logger.endTimer('add_game');
-    logger.error('ADD_GAME', "Fehler beim Hinzufügen des Spiels", { 
-      gameTitle: gameInfo.title,
+    const logger = getLogger();
+    logger.error('ADD_GAME', 'Error adding game', {
       gameFolder,
-      executablePath 
-    }, error);
-    
+      error: error.message
+    });
     return { 
       success: false, 
-      message: `Fehler: ${error.message || "Unbekannter Fehler"}`
+      message: `Error: ${error.message || "Unknown error"}`
     };
   }
 }
 
 /**
- * Fügt mehrere Spiele hinzu
- * @param {Event} event - Das IPC Event
- * @param {Array} games - Die Liste der Spiele
- * @returns {Object} Das Ergebnis des Hinzufügens
+ * Adds multiple games
+ * @param {Event} event - The IPC Event
+ * @param {Array} games - The list of games
+ * @returns {Object} The result of adding
  */
 async function addMultipleGames(event, games) {
-  logger.startTimer('add_multiple_games');
-  logger.logIPC('add-multiple-games', 'RECEIVE', { gamesCount: games.length });
-  
   try {
+    const logger = getLogger();
+    logger.info('ADD_MULTIPLE_GAMES', 'Starting multiple game addition', {
+      gameCount: games.length
+    });
+    
     let addedCount = 0;
     let errors = [];
     
-    logger.info('ADD_MULTIPLE', `Beginne Hinzufügen von ${games.length} Spielen`);
-    
-    for (let i = 0; i < games.length; i++) {
-      const game = games[i];
-      logger.debug('ADD_MULTIPLE', `Verarbeite Spiel ${i + 1}/${games.length}`, { 
-        title: game.title,
-        directory: game.directory 
-      });
-      
+    for (const game of games) {
       try {
-        // Zielverzeichnis erstellen
+        // Create target directory
         const dirName = path.basename(game.directory);
         
-        // Wenn es eine DLSite-ID gibt, vollständige Informationen abrufen
+        // If there's a DLSite ID, retrieve complete information
         if (game.dlsiteId) {
-          logger.debug('ADD_MULTIPLE', 'Rufe DLSite-Details ab', { dlsiteId: game.dlsiteId });
-          
           try {
-            const dlsiteClient = new DLSiteClient();
+            const networkManager = platformManager.getNetworkManager();
+            const dlsiteClient = new DLSiteClient(networkManager);
             const gameDetails = await dlsiteClient.getGameInfo(game.dlsiteId, 'maniax');
             
-            // Grundlegende Informationen mit Details überschreiben
+            // Override basic information with details
             Object.assign(game, gameDetails);
             
-            logger.debug('ADD_MULTIPLE', 'DLSite-Details erfolgreich abgerufen', { 
+            logger.info('ADD_MULTIPLE_GAMES', 'DLSite details retrieved for game', {
               dlsiteId: game.dlsiteId,
-              title: gameDetails.title 
+              title: gameDetails.title
             });
           } catch (dlsiteError) {
-            logger.warn('ADD_MULTIPLE', `Konnte keine DLSite-Details für ${game.dlsiteId} abrufen`, { 
-              dlsiteId: game.dlsiteId 
-            }, dlsiteError);
-            // Weiter mit grundlegenden Informationen
+            logger.warn('ADD_MULTIPLE_GAMES', 'Could not retrieve DLSite details', {
+              dlsiteId: game.dlsiteId,
+              error: dlsiteError.message
+            });
+            // Continue with basic information
           }
         }
         
-        // Dustgrain-Datei erstellen
+        // Create dustgrain file
         const dustgrain = {
           title: game.title || dirName,
           executable: game.executable || '',
           executablePath: game.directory,
           version: game.version || "1.0",
-          genre: game.genre || "Sonstiges",
+          genre: game.genre || "Other",
           releaseDate: game.releaseDate || new Date().toISOString().split('T')[0],
-          developer: game.developer || "Unbekannt",
-          publisher: game.publisher || "Unbekannt",
+          developer: game.developer || "Unknown",
+          publisher: game.publisher || "Unknown",
           description: game.description || "",
-          source: game.source || "Lokal",
+          source: game.source || "Local",
           tags: game.tags || [],
           coverImage: game.coverImage || "",
           screenshots: game.screenshots || [],
@@ -501,47 +432,37 @@ async function addMultipleGames(event, games) {
           installed: true,
           installDate: new Date().toISOString(),
           
-          // Plattformspezifische Informationen
+          // Platform-specific information
           dlsiteId: game.dlsiteId || null,
           dlsiteCategory: game.dlsiteCategory || 'maniax',
           
           dustVersion: "1.0"
         };
         
-        logger.debug('ADD_MULTIPLE', 'Speichere Spiel', { 
-          dirName,
-          title: dustgrain.title 
-        });
-        
-        // Speichern der dustgrain-Datei
+        // Save dustgrain file
         const success = fileManager.writeDustgrain(dirName, dustgrain);
         if (success) {
           addedCount++;
-          logger.debug('ADD_MULTIPLE', 'Spiel erfolgreich hinzugefügt', { 
-            dirName,
-            title: dustgrain.title 
+          logger.info('ADD_MULTIPLE_GAMES', 'Game added successfully', {
+            title: dustgrain.title,
+            directory: dirName
           });
         } else {
-          const errorMsg = `${game.title || 'Unbekannt'}: Fehler beim Speichern der Spielinformationen`;
-          errors.push(errorMsg);
-          logger.error('ADD_MULTIPLE', errorMsg, { dirName });
+          errors.push(`${game.title || 'Unknown'}: Error saving game information`);
         }
       } catch (gameError) {
-        const errorMsg = `${game.title || 'Unbekannt'}: ${gameError.message}`;
-        errors.push(errorMsg);
-        logger.error('ADD_MULTIPLE', `Fehler beim Hinzufügen des Spiels ${game.title || 'Unbekannt'}`, { 
-          directory: game.directory 
-        }, gameError);
+        logger.error('ADD_MULTIPLE_GAMES', 'Error adding individual game', {
+          gameTitle: game.title || 'Unknown',
+          error: gameError.message
+        });
+        errors.push(`${game.title || 'Unknown'}: ${gameError.message}`);
       }
     }
     
-    const addTime = logger.endTimer('add_multiple_games');
-    
-    logger.info('ADD_MULTIPLE', 'Mehrfach-Hinzufügen abgeschlossen', { 
-      totalGames: games.length,
+    logger.info('ADD_MULTIPLE_GAMES', 'Multiple game addition completed', {
       addedCount,
       errorCount: errors.length,
-      addTime: `${addTime.toFixed(2)}ms` 
+      totalGames: games.length
     });
     
     return {
@@ -549,270 +470,198 @@ async function addMultipleGames(event, games) {
       addedCount,
       errorCount: errors.length,
       errors,
-      message: `${addedCount} Spiele erfolgreich hinzugefügt${errors.length > 0 ? `, ${errors.length} Fehler` : ''}`
+      message: `${addedCount} games added successfully${errors.length > 0 ? `, ${errors.length} errors` : ''}`
     };
   } catch (error) {
-    logger.endTimer('add_multiple_games');
-    logger.error('ADD_MULTIPLE', 'Fehler beim Hinzufügen mehrerer Spiele', { gamesCount: games.length }, error);
+    const logger = getLogger();
+    logger.error('ADD_MULTIPLE_GAMES', 'Error adding multiple games', {
+      gameCount: games.length,
+      error: error.message
+    });
     return {
       success: false,
       addedCount: 0,
       errorCount: 1,
       errors: [error.message],
-      message: `Fehler: ${error.message}`
+      message: `Error: ${error.message}`
     };
   }
 }
 
 /**
- * Aktualisiert ein Spiel
- * @param {Event} event - Das IPC Event
- * @param {string} gameDirectory - Das Spieleverzeichnis
- * @param {Object} updates - Die zu aktualisierenden Felder
- * @returns {Object} Das Ergebnis der Aktualisierung
+ * Updates a game
+ * @param {Event} event - The IPC Event
+ * @param {string} gameDirectory - The game directory
+ * @param {Object} updates - The fields to update
+ * @returns {Object} The result of update
  */
 async function updateGame(event, gameDirectory, updates) {
-  logger.startTimer('update_game');
-  logger.logIPC('update-game', 'RECEIVE', { gameDirectory, updateFields: Object.keys(updates) });
-  
   try {
-    logger.debug('UPDATE_GAME', 'Lade aktuelle Spielinformationen', { gameDirectory });
+    const logger = getLogger();
+    logger.info('UPDATE_GAME', 'Starting game update', {
+      gameDirectory,
+      updateFields: Object.keys(updates)
+    });
     
-    // Spielinformationen lesen
+    // Read game information
     const gameInfo = fileManager.readDustgrain(gameDirectory);
     
     if (!gameInfo) {
-      logger.warn('UPDATE_GAME', 'Dustgrain-Datei nicht gefunden', { gameDirectory });
       return { 
         success: false, 
-        message: "Dustgrain-Datei nicht gefunden" 
+        message: "Dustgrain file not found" 
       };
     }
     
-    logger.debug('UPDATE_GAME', 'Aktuelle Spielinfo geladen', { 
-      gameDirectory,
-      currentTitle: gameInfo.title,
-      currentId: gameInfo.internalId 
-    });
-    
-    // Aktualisiere die Felder
+    // Update fields
     const updatedInfo = { ...gameInfo, ...updates };
     
-    logger.debug('UPDATE_GAME', 'Wende Updates an', { 
-      gameDirectory,
-      updates,
-      updatedTitle: updatedInfo.title 
-    });
-    
-    // Speichere die aktualisierte Datei
+    // Save updated file
     const success = fileManager.writeDustgrain(gameDirectory, updatedInfo);
     
-    const updateTime = logger.endTimer('update_game');
-    
     if (success) {
-      logger.logGameAction('UPDATE_GAME_SUCCESS', updatedInfo.internalId, updatedInfo.title, { 
+      logger.info('UPDATE_GAME', 'Game updated successfully', {
         gameDirectory,
-        updateFields: Object.keys(updates),
-        updateTime: `${updateTime.toFixed(2)}ms` 
+        gameTitle: updatedInfo.title
       });
-      
       return { 
         success: true, 
         dustgrain: updatedInfo,
-        message: "Spiel erfolgreich aktualisiert" 
+        message: "Game updated successfully" 
       };
     } else {
-      logger.error('UPDATE_GAME', 'Fehler beim Speichern der aktualisierten Spielinformationen', { 
-        gameDirectory,
-        updateTime: `${updateTime.toFixed(2)}ms` 
+      logger.error('UPDATE_GAME', 'Error saving updated game information', {
+        gameDirectory
       });
-      
       return { 
         success: false, 
-        message: "Fehler beim Speichern der aktualisierten Spielinformationen" 
+        message: "Error saving updated game information" 
       };
     }
   } catch (error) {
-    logger.endTimer('update_game');
-    logger.error('UPDATE_GAME', "Fehler beim Aktualisieren des Spiels", { 
+    const logger = getLogger();
+    logger.error('UPDATE_GAME', 'Error updating game', {
       gameDirectory,
-      updates 
-    }, error);
-    
+      error: error.message
+    });
     return { 
       success: false, 
-      message: `Fehler: ${error.message || "Unbekannter Fehler"}` 
+      message: `Error: ${error.message || "Unknown error"}` 
     };
   }
 }
 
 /**
- * Löscht ein Spiel
- * @param {Event} event - Das IPC Event
- * @param {string} gameDirectory - Das zu löschende Spieleverzeichnis
- * @returns {Object} Das Ergebnis des Löschens
+ * Deletes a game
+ * @param {Event} event - The IPC Event
+ * @param {string} gameDirectory - The game directory to delete
+ * @returns {Object} The result of deletion
  */
 async function deleteGame(event, gameDirectory) {
-  logger.startTimer('delete_game');
-  logger.logIPC('delete-game', 'RECEIVE', { gameDirectory });
-  
   try {
+    const logger = getLogger();
+    logger.info('DELETE_GAME', 'Starting game deletion', { gameDirectory });
+    
     const gamePath = path.join(appConfig.gamesDirectoryPath, gameDirectory);
     
-    logger.debug('DELETE_GAME', 'Prüfe Spielverzeichnis', { 
-      gameDirectory,
-      fullPath: gamePath 
-    });
-    
     if (!fs.existsSync(gamePath)) {
-      logger.warn('DELETE_GAME', 'Spielverzeichnis nicht gefunden', { 
-        gameDirectory,
-        fullPath: gamePath 
-      });
-      
       return { 
         success: false, 
-        message: "Spielverzeichnis nicht gefunden" 
+        message: "Game directory not found" 
       };
     }
     
-    // Lade Spielinformationen vor dem Löschen für Logging
-    const gameInfo = fileManager.readDustgrain(gameDirectory);
-    const gameTitle = gameInfo ? gameInfo.title : gameDirectory;
-    const gameId = gameInfo ? gameInfo.internalId : null;
-    
-    logger.debug('DELETE_GAME', 'Beginne Löschvorgang', { 
-      gameDirectory,
-      gameTitle,
-      gameId 
-    });
-    
-    // Hier wird nur der Verweis in Dust gelöscht, nicht das eigentliche Spiel
+    // Here only the reference in Dust is deleted, not the actual game
     fs.rmSync(gamePath, { recursive: true, force: true });
     
-    const deleteTime = logger.endTimer('delete_game');
-    
-    logger.logGameAction('DELETE_GAME_SUCCESS', gameId, gameTitle, { 
-      gameDirectory,
-      deleteTime: `${deleteTime.toFixed(2)}ms` 
-    });
+    logger.info('DELETE_GAME', 'Game deleted successfully', { gameDirectory });
     
     return { 
       success: true, 
-      message: "Spiel erfolgreich aus Dust entfernt" 
+      message: "Game successfully removed from Dust" 
     };
   } catch (error) {
-    logger.endTimer('delete_game');
-    logger.error('DELETE_GAME', "Fehler beim Löschen des Spiels", { gameDirectory }, error);
-    
+    const logger = getLogger();
+    logger.error('DELETE_GAME', 'Error deleting game', {
+      gameDirectory,
+      error: error.message
+    });
     return { 
       success: false, 
-      message: `Fehler: ${error.message || "Unbekannter Fehler"}` 
+      message: `Error: ${error.message || "Unknown error"}` 
     };
   }
 }
 
 /**
- * Startet ein Spiel
- * @param {Event} event - Das IPC Event
- * @param {string} gameDirectory - Das Spieleverzeichnis
- * @returns {Object} Das Ergebnis des Startens
+ * Launches a game
+ * @param {Event} event - The IPC Event
+ * @param {string} gameDirectory - The game directory
+ * @returns {Object} The result of launching
  */
 async function launchGame(event, gameDirectory) {
-  logger.startTimer('launch_game');
-  logger.logIPC('launch-game', 'RECEIVE', { gameDirectory });
-  
   try {
-    logger.debug('LAUNCH_GAME', 'Lade Spielinformationen', { gameDirectory });
+    const logger = getLogger();
+    logger.info('LAUNCH_GAME', 'Starting game launch', { gameDirectory });
     
-    // Spielinformationen lesen
+    // Read game information
     const gameInfo = fileManager.readDustgrain(gameDirectory);
     
     if (!gameInfo) {
-      logger.error('LAUNCH_GAME', 'Dustgrain-Datei nicht gefunden', { gameDirectory });
       return { 
         success: false, 
-        message: "Dustgrain-Datei nicht gefunden"
+        message: "Dustgrain file not found"
       };
     }
-    
-    logger.debug('LAUNCH_GAME', 'Spielinformationen geladen', { 
-      gameDirectory,
-      title: gameInfo.title,
-      executable: gameInfo.executable,
-      executablePath: gameInfo.executablePath 
-    });
     
     if (!gameInfo.executable || !gameInfo.executablePath) {
-      logger.error('LAUNCH_GAME', 'Keine ausführbare Datei definiert', { 
-        gameDirectory,
-        title: gameInfo.title,
-        executable: gameInfo.executable,
-        executablePath: gameInfo.executablePath 
-      });
-      
       return { 
         success: false, 
-        message: "Keine ausführbare Datei für dieses Spiel definiert"
+        message: "No executable file defined for this game"
       };
     }
     
-    // Aktualisiere lastPlayed
-    logger.debug('LAUNCH_GAME', 'Aktualisiere lastPlayed Zeitstempel');
+    // Update lastPlayed
     gameInfo.lastPlayed = new Date().toISOString();
     const success = fileManager.writeDustgrain(gameDirectory, gameInfo);
-    
+
     if (!success) {
-      logger.error('LAUNCH_GAME', 'Fehler beim Aktualisieren des Spiels vor dem Start', { 
-        gameDirectory,
-        title: gameInfo.title 
-      });
-      
       return { 
         success: false, 
-        message: "Fehler beim Aktualisieren des Spiels vor dem Start"
+        message: "Error updating game before launch"
       };
     }
-    
-    // Starte das Spiel
+
+    // Launch the game
     const fullPath = path.join(gameInfo.executablePath, gameInfo.executable);
-    
-    logger.info('LAUNCH_GAME', 'Starte Spiel', { 
-      gameDirectory,
-      title: gameInfo.title,
-      executable: gameInfo.executable,
-      fullPath,
-      workingDirectory: gameInfo.executablePath 
-    });
-    
+
     const child = spawn(fullPath, [], {
       detached: true,
       stdio: 'ignore',
       cwd: gameInfo.executablePath
     });
-    
+
     child.unref();
-    
-    const launchTime = logger.endTimer('launch_game');
-    
-    logger.logGameAction('LAUNCH_GAME_SUCCESS', gameInfo.internalId, gameInfo.title, { 
+
+    logger.info('LAUNCH_GAME', 'Game launched successfully', {
       gameDirectory,
-      executable: gameInfo.executable,
-      launchTime: `${launchTime.toFixed(2)}ms`,
-      pid: child.pid 
+      gameTitle: gameInfo.title,
+      executable: fullPath
     });
-    
+
     return { 
       success: true, 
-      message: `Spiel ${gameInfo.title} wird gestartet...`
+      message: `Game ${gameInfo.title} is starting...`
     };
   } catch (error) {
-    logger.endTimer('launch_game');
-    logger.error('LAUNCH_GAME', "Fehler beim Starten des Spiels", { gameDirectory }, error);
-    
+    const logger = getLogger();
+    logger.error('LAUNCH_GAME', 'Error launching game', {
+      gameDirectory,
+      error: error.message
+    });
     return { 
       success: false, 
-      message: `Fehler: ${error.message || "Unbekannter Fehler"}`
+      message: `Error: ${error.message || "Unknown error"}`
     };
   }
 }
