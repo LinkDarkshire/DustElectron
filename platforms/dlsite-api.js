@@ -14,9 +14,10 @@ class DLSiteClient {
    * @param {string} locale - Locale für die API-Anfragen (Standard: 'en_US')
    * @param {string} assetsPath - Pfad zum Assets-Ordner (Standard: './assets/games')
    */
-  constructor(locale = 'en_US', assetsPath = './assets/games') {
+  constructor(networkManager, assetsPath = './assets/games', locale = 'en_US') {
     this.locale = locale;
     this.assetsPath = assetsPath;
+    this.networkManager = networkManager;
     this.headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
       'Accept-Language': locale
@@ -81,6 +82,19 @@ class DLSiteClient {
     
     return url;
   }
+  /**
+  * Macht einen HTTP-Request - mit oder ohne VPN
+  * @private
+  */
+  async _makeRequest(url, options = {}) {
+    if (this.networkManager) {
+      return await this.networkManager.makeRequest(url, options);
+    } else {
+      // Fallback auf normales fetch wenn kein NetworkManager vorhanden
+      const fetch = require('node-fetch');
+      return await fetch(url, options);
+    }
+  }
 
   /**
    * Ruft grundlegende Produktinformationen vom DLSite AJAX-API ab
@@ -98,7 +112,7 @@ class DLSiteClient {
 
       const url = `https://www.dlsite.com/maniax/product/info/ajax?product_id=${productId}&locale=${this.locale}`;
       
-      const response = await fetch(url, {
+      const response = await this.networkManager.makeRequest(url, {
         headers: {
           ...this.headers,
           Cookie: this._getCookieHeader()
@@ -148,7 +162,7 @@ class DLSiteClient {
       // Versuche URLs nacheinander, bis eine erfolgreich ist
       for (const url of urls) {
         try {
-          response = await fetch(url, {
+          response = await this.networkManager.makeRequest(url, {
             headers: {
               ...this.headers,
               Cookie: this._getCookieHeader()
@@ -337,7 +351,7 @@ class DLSiteClient {
       
       console.log(`Versuche Bild herunterzuladen: ${absoluteUrl}`);
       
-      const response = await fetch(absoluteUrl, {
+      const response = await this._makeRequest(absoluteUrl, {
         headers: this.headers
       });
       

@@ -4,28 +4,89 @@ const { ipcRenderer } = require('electron');
 class DustApp {
   constructor() {
     this.games = [];
-    this.currentView = 'grid'; // Grid oder List Ansicht
+    this.currentView = 'grid';
     this.currentPage = 'library';
     this.filters = {
       search: '',
       genre: 'all',
       source: 'all'
     };
-    
+
+    console.log('DustApp wird initialisiert...');
+
     this.initEventListeners();
     this.loadGames();
+    this.initVPNWidget(); // Am Ende aufrufen
   }
   
   // Event-Listener initialisieren
   initEventListeners() {
+    console.log('Event Listeners werden initialisiert...');
+    
     // Navigation
     document.querySelectorAll('.nav-button').forEach(button => {
       button.addEventListener('click', () => {
         this.changePage(button.dataset.page);
       });
     });
-    
+
     // Suchfeld
+    const searchInput = document.querySelector('.search-bar');
+    if (searchInput) {
+      searchInput.addEventListener('input', (e) => {
+        this.filters.search = e.target.value.toLowerCase();
+        this.applyFilters();
+      });
+    }
+    
+    // "Spiel hinzufügen" Button
+    const addGameBtn = document.getElementById('add-game-btn');
+    if (addGameBtn) {
+      addGameBtn.addEventListener('click', () => {
+        console.log('Spiel hinzufügen Button geklickt');
+        this.showAddGameModal();
+      });
+    }
+    
+    console.log('Alle Event Listeners installiert');
+  }
+
+  // VPN Widget initialisieren
+  initVPNWidget() {
+    console.log('VPN Widget wird initialisiert...');
+    
+    this.vpnStatus = 'disconnected';
+    this.selectedVPNConfig = null;
+    this.vpnConfigs = [];
+    
+    // Event Listeners für VPN-Steuerung
+    const vpnToggleBtn = document.getElementById('vpn-toggle-btn');
+    const vpnConfigBtn = document.getElementById('vpn-config-btn');
+    
+    if (vpnToggleBtn) {
+      vpnToggleBtn.addEventListener('click', () => {
+        console.log('VPN Toggle Button geklickt');
+        if (this.vpnStatus === 'connected') {
+          this.disconnectVPN();
+        } else if (this.vpnStatus === 'disconnected') {
+          this.connectVPN();
+        }
+      });
+    }
+    
+    if (vpnConfigBtn) {
+      vpnConfigBtn.addEventListener('click', () => {
+        console.log('VPN Config Button geklickt');
+        this.showVPNConfigModal();
+      });
+    }
+    
+    // Lade verfügbare VPN-Konfigurationen
+    this.loadVPNConfigs();
+    
+    console.log('VPN Widget initialisiert');
+
+        // Suchfeld
     const searchInput = document.querySelector('.search-bar');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
@@ -94,6 +155,210 @@ class DustApp {
       }
     });
   }
+
+  // VPN Status aktualisieren
+  updateVPNStatus(status, message = '') {
+    this.vpnStatus = status;
+    
+    const statusLight = document.getElementById('vpn-status-light');
+    const statusText = document.getElementById('vpn-status-text');
+    const toggleBtn = document.getElementById('vpn-toggle-btn');
+    
+    if (!statusLight || !statusText || !toggleBtn) {
+      console.warn('VPN UI Elemente nicht gefunden');
+      return;
+    }
+    
+    // Entferne alle Status-Klassen
+    statusLight.classList.remove('connected', 'connecting');
+    toggleBtn.classList.remove('connected', 'connecting');
+    
+    switch (status) {
+      case 'connected':
+        statusLight.classList.add('connected');
+        statusText.textContent = 'Connected';
+        toggleBtn.classList.add('connected');
+        toggleBtn.innerHTML = '<i class="fas fa-power-off"></i><span>Disconnect</span>';
+        toggleBtn.disabled = false;
+        break;
+        
+      case 'connecting':
+        statusLight.classList.add('connecting');
+        statusText.textContent = 'Connecting...';
+        toggleBtn.classList.add('connecting');
+        toggleBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Connecting...</span>';
+        toggleBtn.disabled = true;
+        break;
+        
+      case 'disconnected':
+      default:
+        statusText.textContent = message || 'Disconnected';
+        toggleBtn.innerHTML = '<i class="fas fa-power-off"></i><span>Connect VPN</span>';
+        toggleBtn.disabled = !this.selectedVPNConfig;
+        break;
+    }
+  }
+
+  // VPN verbinden
+  async connectVPN() {
+    if (!this.selectedVPNConfig) {
+      this.showNotification('Bitte wähle zuerst eine VPN-Konfiguration aus', 'error');
+      return;
+    }
+    
+    try {
+      this.updateVPNStatus('connecting');
+      
+      const result = await ipcRenderer.invoke('enable-vpn', this.selectedVPNConfig);
+      
+      if (result.success) {
+        this.updateVPNStatus('connected');
+        this.showNotification('VPN erfolgreich verbunden', 'success');
+      } else {
+        this.updateVPNStatus('disconnected', 'Connection failed');
+        this.showNotification(`VPN-Verbindung fehlgeschlagen: ${result.message}`, 'error');
+      }
+    } catch (error) {
+      console.error('VPN-Verbindungsfehler:', error);
+      this.updateVPNStatus('disconnected', 'Connection failed');
+      this.showNotification('VPN-Verbindung fehlgeschlagen', 'error');
+    }
+  }
+  // VPN trennen
+  async disconnectVPN() {
+    try {
+      this.updateVPNStatus('connecting');
+      
+      const result = await ipcRenderer.invoke('disable-vpn');
+      
+      if (result.success) {
+        this.updateVPNStatus('disconnected');
+        this.showNotification('VPN getrennt', 'info');
+      } else {
+        this.updateVPNStatus('connected');
+        this.showNotification(`Fehler beim Trennen: ${result.message}`, 'error');
+      }
+    } catch (error) {
+      console.error('VPN-Trennungsfehler:', error);
+      this.updateVPNStatus('connected');
+      this.showNotification('Fehler beim Trennen der VPN-Verbindung', 'error');
+    }
+  }
+
+async checkVPNStatus() {
+  try {
+    const status = await ipcRenderer.invoke('get-vpn-status');
+    
+    // Status nur aktualisieren, wenn er sich geändert hat
+    if (status.connected && this.vpnStatus !== 'connected') {
+      this.updateVPNStatus('connected');
+    } else if (!status.connected && this.vpnStatus === 'connected') {
+      this.updateVPNStatus('disconnected', 'Connection lost');
+      this.showNotification('VPN-Verbindung verloren', 'error');
+    }
+  } catch (error) {
+    console.error('Fehler beim Prüfen des VPN-Status:', error);
+  }
+}
+
+  // VPN Konfigurationen laden
+  async loadVPNConfigs() {
+    try {
+      const configs = await ipcRenderer.invoke('get-vpn-configs');
+      this.vpnConfigs = configs;
+      
+      console.log('VPN Konfigurationen geladen:', configs);
+      
+      if (this.vpnConfigs.length > 0 && !this.selectedVPNConfig) {
+        this.selectedVPNConfig = this.vpnConfigs[0].path;
+        this.updateVPNStatus('disconnected');
+      }
+    } catch (error) {
+      console.error('Fehler beim Laden der VPN-Konfigurationen:', error);
+    }
+  }
+
+showVPNConfigModal() {
+  console.log('Zeige VPN Config Modal');
+
+  const modal = document.createElement('div');
+  modal.className = 'modal vpn-config-modal';
+  modal.id = 'vpn-config-modal';
+  
+  modal.innerHTML = `
+    <div class="modal-content">
+      <div class="modal-header">
+        <h2>VPN Konfiguration</h2>
+        <button class="close-modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <h3>Verfügbare Konfigurationen:</h3>
+        <div id="config-list">
+          ${this.vpnConfigs.length === 0 ? 
+            '<p>Keine VPN-Konfigurationen gefunden.</p>' : 
+            this.vpnConfigs.map(config => `
+              <div class="config-file-item">
+                <span class="config-file-name">${config.name}</span>
+                <div class="config-file-actions">
+                  <button class="select-config-btn" data-path="${config.path}">
+                    ${this.selectedVPNConfig === config.path ? 'Ausgewählt' : 'Auswählen'}
+                  </button>
+                </div>
+              </div>
+            `).join('')
+          }
+        </div>
+        <div class="form-actions">
+          <button class="secondary-button" id="add-config-btn">
+            <i class="fas fa-plus"></i> Konfiguration hinzufügen
+          </button>
+        </div>
+      </div>
+    </div>
+  `;
+  
+  document.body.appendChild(modal);
+  
+  // Modal schließen
+  modal.querySelector('.close-modal').addEventListener('click', () => {
+    modal.remove();
+  });
+  
+  modal.addEventListener('click', (e) => {
+    if (e.target === modal) {
+      modal.remove();
+    }
+  });
+  
+  // Konfiguration auswählen
+  modal.querySelectorAll('.select-config-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const configPath = btn.dataset.path;
+      this.selectedVPNConfig = configPath;
+      this.updateVPNStatus('disconnected');
+      this.showNotification('VPN-Konfiguration ausgewählt', 'success');
+      modal.remove();
+    });
+  });
+  
+  // Neue Konfiguration hinzufügen
+  const addConfigBtn = modal.querySelector('#add-config-btn');
+  if (addConfigBtn) {
+    addConfigBtn.addEventListener('click', async () => {
+      try {
+        const result = await ipcRenderer.invoke('select-vpn-config');
+        if (result.success) {
+          this.loadVPNConfigs();
+          this.showNotification('VPN-Konfiguration hinzugefügt', 'success');
+          modal.remove();
+        }
+      } catch (error) {
+        console.error('Fehler beim Hinzufügen der VPN-Konfiguration:', error);
+        this.showNotification('Fehler beim Hinzufügen der Konfiguration', 'error');
+      }
+    });
+  }
+}
   
   // Seite wechseln
   changePage(pageName) {
@@ -1364,3 +1629,4 @@ fillGameDetailsForm(details) {
 document.addEventListener('DOMContentLoaded', () => {
   window.app = new DustApp();
 });
+

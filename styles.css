@@ -942,3 +942,196 @@ input:checked + .toggle-slider:before {
 ::-webkit-scrollbar-thumb:hover {
     background: var(--primary-color);
 }
+
+/* VPN Status Widget */
+.vpn-status-widget {
+    padding: var(--spacing-md);
+    margin: var(--spacing-sm) 0;
+    background-color: rgba(0, 0, 0, 0.3);
+    border-radius: 4px;
+    border: 1px solid var(--bg-light);
+}
+
+.vpn-status-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: var(--spacing-sm);
+}
+
+.vpn-label {
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    font-weight: bold;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.vpn-status-indicator {
+    display: flex;
+    align-items: center;
+    gap: var(--spacing-xs);
+}
+
+.status-light {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background-color: var(--danger-color);
+    box-shadow: 0 0 6px rgba(231, 76, 60, 0.6);
+    transition: all var(--transition-speed);
+}
+
+.status-light.connected {
+    background-color: var(--success-color);
+    box-shadow: 0 0 6px rgba(46, 204, 113, 0.6);
+    animation: pulse-green 2s infinite;
+}
+
+.status-light.connecting {
+    background-color: #f39c12;
+    box-shadow: 0 0 6px rgba(243, 156, 18, 0.6);
+    animation: pulse-orange 1s infinite;
+}
+
+@keyframes pulse-green {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.7; 
+        transform: scale(1.1);
+    }
+}
+
+@keyframes pulse-orange {
+    0%, 100% { 
+        opacity: 1; 
+        transform: scale(1);
+    }
+    50% { 
+        opacity: 0.5; 
+        transform: scale(1.2);
+    }
+}
+
+.vpn-status-text {
+    font-size: var(--font-size-xs);
+    color: var(--text-dark);
+}
+
+.vpn-controls {
+    display: flex;
+    gap: var(--spacing-xs);
+}
+
+.vpn-toggle-btn {
+    flex: 1;
+    background-color: var(--bg-light);
+    color: var(--text-color);
+    border: none;
+    border-radius: 3px;
+    padding: var(--spacing-xs) var(--spacing-sm);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    transition: all var(--transition-speed);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--spacing-xs);
+}
+
+.vpn-toggle-btn:disabled {
+    background-color: var(--bg-darker);
+    color: var(--text-muted);
+    cursor: not-allowed;
+}
+
+.vpn-toggle-btn:not(:disabled):hover {
+    background-color: var(--primary-color);
+}
+
+.vpn-toggle-btn.connected {
+    background-color: var(--success-color);
+}
+
+.vpn-toggle-btn.connected:hover {
+    background-color: var(--danger-color);
+}
+
+.vpn-toggle-btn.connecting {
+    background-color: #f39c12;
+    animation: pulse-button 1s infinite;
+}
+
+@keyframes pulse-button {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.7; }
+}
+
+.vpn-config-btn {
+    background-color: var(--bg-light);
+    color: var(--text-muted);
+    border: none;
+    border-radius: 3px;
+    padding: var(--spacing-xs);
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+    transition: all var(--transition-speed);
+    width: 28px;
+    height: 28px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.vpn-config-btn:hover {
+    background-color: var(--bg-lighter);
+    color: var(--text-color);
+}
+
+/* VPN Config Modal */
+.vpn-config-modal .modal-content {
+    width: 400px;
+}
+
+.config-file-item {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: var(--spacing-sm);
+    background-color: var(--bg-darker);
+    border-radius: 3px;
+    margin-bottom: var(--spacing-xs);
+}
+
+.config-file-name {
+    font-size: var(--font-size-sm);
+    color: var(--text-color);
+}
+
+.config-file-actions {
+    display: flex;
+    gap: var(--spacing-xs);
+}
+
+.select-config-btn {
+    background-color: var(--primary-color);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+}
+
+.remove-config-btn {
+    background-color: var(--danger-color);
+    color: white;
+    border: none;
+    border-radius: 3px;
+    padding: 2px 8px;
+    cursor: pointer;
+    font-size: var(--font-size-xs);
+}
