@@ -421,20 +421,34 @@ showVPNConfigModal() {
       this.showNotification('Fehler beim Laden der Spiele', 'error');
     }
   }
-  // Spiel-Details anzeigen
+// Enhanced showGameDetails function with fixed CSS structure
 showGameDetails(gameInfo) {
-  // Bestehende Detail-Ansicht entfernen, falls vorhanden
+  console.log('Showing game details for:', gameInfo.title);
+  console.log('Game info object:', gameInfo);
+  
+  // Remove existing detail view if present
   const existingDetails = document.getElementById('game-details-panel');
   if (existingDetails) {
     existingDetails.remove();
   }
+  
+  // Remove existing overlay
+  const existingOverlay = document.querySelector('.details-overlay');
+  if (existingOverlay) {
+    existingOverlay.remove();
+  }
 
-  // Detail-Panel erstellen
+  // Create overlay for mobile/background click
+  const overlay = document.createElement('div');
+  overlay.className = 'details-overlay';
+  document.body.appendChild(overlay);
+
+  // Create detail panel
   const detailsPanel = document.createElement('div');
   detailsPanel.id = 'game-details-panel';
   detailsPanel.className = 'game-details-panel';
   
-  // Formatiere Tags als String
+  // Format tags as HTML
   let tagsHtml = '';
   if (gameInfo.dlsiteTags && gameInfo.dlsiteTags.length > 0) {
     tagsHtml = `
@@ -445,102 +459,194 @@ showGameDetails(gameInfo) {
         </div>
       </div>
     `;
-  }
-  
-  // Formatiere Voice Actors als String
-  let voiceActorsHtml = '';
-  if (gameInfo.dlsiteVoiceActors && gameInfo.dlsiteVoiceActors.length > 0) {
-    voiceActorsHtml = `
+  } else if (gameInfo.tags && gameInfo.tags.length > 0) {
+    // Fallback to general tags if dlsiteTags not available
+    tagsHtml = `
       <div class="detail-group">
-        <h4>Sprecher</h4>
-        <p>${gameInfo.dlsiteVoiceActors.join(', ')}</p>
+        <h4>Tags</h4>
+        <div class="tag-list">
+          ${gameInfo.tags.map(tag => `<span class="game-tag">${tag}</span>`).join('')}
+        </div>
       </div>
     `;
   }
   
-  // Formatiere Autoren als String
+  // Format Voice Actors as HTML
+  let voiceActorsHtml = '';
+  if (gameInfo.dlsiteVoiceActors && gameInfo.dlsiteVoiceActors.length > 0) {
+    const voiceActorsText = Array.isArray(gameInfo.dlsiteVoiceActors) 
+      ? gameInfo.dlsiteVoiceActors.join(', ') 
+      : gameInfo.dlsiteVoiceActors;
+    voiceActorsHtml = `
+      <div class="detail-group">
+        <h4>Voice Actors</h4>
+        <p>${voiceActorsText}</p>
+      </div>
+    `;
+  }
+  
+  // Format Product Format as HTML
+  let productFormatHtml = '';
+  if (gameInfo.dlsiteProductFormat && gameInfo.dlsiteProductFormat.length > 0) {
+    const productFormatText = Array.isArray(gameInfo.dlsiteProductFormat) 
+      ? gameInfo.dlsiteProductFormat.join(', ') 
+      : gameInfo.dlsiteProductFormat;
+    productFormatHtml = `
+      <div class="detail-group">
+        <h4>Product Format</h4>
+        <p>${productFormatText}</p>
+      </div>
+    `;
+  }
+  
+  // Format Authors as HTML
   let authorsHtml = '';
   if (gameInfo.authors && gameInfo.authors.length > 0) {
     authorsHtml = `
       <div class="detail-group">
-        <h4>Autoren</h4>
+        <h4>Authors</h4>
         <p>${gameInfo.authors.join(', ')}</p>
       </div>
     `;
   }
   
-  // Formatiere Illustratoren als String
+  // Format Illustrators as HTML
   let illustratorsHtml = '';
   if (gameInfo.illustrators && gameInfo.illustrators.length > 0) {
     illustratorsHtml = `
       <div class="detail-group">
-        <h4>Illustrationen</h4>
+        <h4>Illustrations</h4>
         <p>${gameInfo.illustrators.join(', ')}</p>
       </div>
     `;
   }
   
-  // Formatiere Szenario-Autoren als String
+  // Format Scenario writers as HTML
   let scenarioHtml = '';
   if (gameInfo.scenario && gameInfo.scenario.length > 0) {
     scenarioHtml = `
       <div class="detail-group">
-        <h4>Szenario</h4>
+        <h4>Scenario</h4>
         <p>${gameInfo.scenario.join(', ')}</p>
       </div>
     `;
   }
   
-  // Platzhalterbild verwenden, wenn kein Cover vorhanden ist
+  // Format DLSite Circle information
+  let circleHtml = '';
+  if (gameInfo.dlsiteCircle && gameInfo.dlsiteCircle !== gameInfo.developer) {
+    circleHtml = `
+      <div class="detail-group">
+        <h4>Circle</h4>
+        <p>${gameInfo.dlsiteCircle}</p>
+      </div>
+    `;
+  }
+  
+  // Format DLSite specific information
+  let dlsiteSpecificHtml = '';
+  if (gameInfo.source === 'DLSite') {
+    const dlsiteFields = [];
+    
+    if (gameInfo.dlsiteId) {
+      dlsiteFields.push(`<strong>DLSite ID:</strong> ${gameInfo.dlsiteId}`);
+    }
+    
+    if (gameInfo.dlsiteFileSize) {
+      dlsiteFields.push(`<strong>File Size:</strong> ${gameInfo.dlsiteFileSize}`);
+    }
+    
+    if (gameInfo.dlsiteReleaseDate) {
+      dlsiteFields.push(`<strong>Release Date:</strong> ${gameInfo.dlsiteReleaseDate}`);
+    }
+    
+    if (gameInfo.dlsiteUpdateDate) {
+      dlsiteFields.push(`<strong>Update Date:</strong> ${gameInfo.dlsiteUpdateDate}`);
+    }
+    
+    if (dlsiteFields.length > 0) {
+      dlsiteSpecificHtml = `
+        <div class="detail-group">
+          <h4>DLSite Information</h4>
+          <div class="dlsite-info">
+            ${dlsiteFields.map(field => `<p>${field}</p>`).join('')}
+          </div>
+        </div>
+      `;
+    }
+  }
+  
+  // Use placeholder image if no cover available
   const coverImage = gameInfo.coverImage && gameInfo.coverImage.trim() !== '' 
     ? gameInfo.coverImage 
     : 'assets/placeholder.png';
   
+  console.log(`Using cover image: ${coverImage}`);
+  
   detailsPanel.innerHTML = `
     <div class="details-header">
       <h2>${gameInfo.title}</h2>
-      <button class="toggle-details-btn" title="Details ausblenden">
+      <button class="toggle-details-btn" title="Hide Details">
         <i class="fas fa-times"></i>
       </button>
     </div>
     <div class="details-content">
       <div class="details-main-info">
         <div class="details-cover">
-          <img src="${coverImage}" alt="${gameInfo.title}">
+          <img src="${coverImage}" alt="${gameInfo.title}" onerror="this.src='assets/placeholder.png'">
         </div>
         <div class="details-primary-info">
           <div class="detail-group">
-            <h4>Entwickler</h4>
-            <p>${gameInfo.developer || 'Unbekannt'}</p>
+            <h4>Developer</h4>
+            <p>${gameInfo.developer || 'Unknown'}</p>
           </div>
           <div class="detail-group">
             <h4>Publisher</h4>
-            <p>${gameInfo.publisher || 'Unbekannt'}</p>
+            <p>${gameInfo.publisher || 'Unknown'}</p>
           </div>
+          ${productFormatHtml}
           <div class="detail-group">
             <h4>Genre</h4>
-            <p>${gameInfo.genre || 'Unbekannt'}</p>
+            <p>${gameInfo.genre || 'Unknown'}</p>
           </div>
           <div class="detail-group">
-            <h4>Sprache</h4>
-            <p>${gameInfo.language || 'Unbekannt'}</p>
+            <h4>Language</h4>
+            <p>${gameInfo.language || 'Unknown'}</p>
           </div>
+          ${gameInfo.dlsiteAgeRating ? `
           <div class="detail-group">
-            <h4>Dateigröße</h4>
-            <p>${gameInfo.dlsiteFileSize || 'Unbekannt'}</p>
+            <h4>Age Rating</h4>
+            <p>${gameInfo.dlsiteAgeRating}</p>
           </div>
+          ` : ''}
+          ${gameInfo.dlsiteFileSize ? `
           <div class="detail-group">
-            <h4>Erscheinungsdatum</h4>
-            <p>${gameInfo.dlsiteReleaseDate || 'Unbekannt'}</p>
+            <h4>File Size</h4>
+            <p>${gameInfo.dlsiteFileSize}</p>
           </div>
+          ` : ''}
+          ${gameInfo.dlsiteReleaseDate ? `
+          <div class="detail-group">
+            <h4>Release Date</h4>
+            <p>${gameInfo.dlsiteReleaseDate}</p>
+          </div>
+          ` : ''}
+          ${gameInfo.dlsiteUpdateDate ? `
+          <div class="detail-group">
+            <h4>Update Date</h4>
+            <p>${gameInfo.dlsiteUpdateDate}</p>
+          </div>
+          ` : ''}
+          ${circleHtml}
         </div>
       </div>
       
       <div class="details-description">
-        <h4>Beschreibung</h4>
-        <p>${gameInfo.description || 'Keine Beschreibung verfügbar'}</p>
+        <h4>Description</h4>
+        <p>${gameInfo.description || 'No description available'}</p>
       </div>
       
+      ${dlsiteSpecificHtml}
       ${tagsHtml}
       ${voiceActorsHtml}
       ${authorsHtml}
@@ -548,48 +654,108 @@ showGameDetails(gameInfo) {
       ${scenarioHtml}
       
       <div class="detail-group">
-        <h4>Quelle</h4>
-        <p>${gameInfo.source || 'Unbekannt'}</p>
-        ${gameInfo.dlsiteUrl ? `<a href="${gameInfo.dlsiteUrl}" target="_blank" class="store-link">Im DLSite-Shop öffnen</a>` : ''}
+        <h4>Source</h4>
+        <p>${gameInfo.source || 'Unknown'}</p>
+        ${gameInfo.dlsiteUrl ? `<a href="${gameInfo.dlsiteUrl}" target="_blank" class="store-link">Open in DLSite Store</a>` : ''}
+        ${gameInfo.steamAppId ? `<a href="https://store.steampowered.com/app/${gameInfo.steamAppId}" target="_blank" class="store-link">Open in Steam Store</a>` : ''}
+        ${gameInfo.itchioUrl ? `<a href="${gameInfo.itchioUrl}" target="_blank" class="store-link">Open in Itch.io</a>` : ''}
       </div>
       
       <div class="details-actions">
-        <button class="primary-button play-game-btn" data-directory="${gameInfo.directory}">
-          <i class="fas fa-play"></i> Spielen
+        <button class="primary-button play-game-btn" data-directory="${gameInfo.directory || ''}">
+          <i class="fas fa-play"></i> Play
         </button>
-        <button class="secondary-button edit-game-btn" data-directory="${gameInfo.directory}">
-          <i class="fas fa-edit"></i> Bearbeiten
+        <button class="secondary-button edit-game-btn" data-directory="${gameInfo.directory || ''}">
+          <i class="fas fa-edit"></i> Edit
         </button>
+        ${gameInfo.executablePath ? `
+        <button class="secondary-button open-folder-btn" data-path="${gameInfo.executablePath}">
+          <i class="fas fa-folder-open"></i> Open Folder
+        </button>
+        ` : ''}
       </div>
     </div>
   `;
   
-  document.getElementById('content').appendChild(detailsPanel);
+  document.body.appendChild(detailsPanel);
   
-  // Event-Listener für das Schließen der Detail-Ansicht
-  detailsPanel.querySelector('.toggle-details-btn').addEventListener('click', () => {
-    detailsPanel.remove();
-  });
+  // Show panel with animation
+  setTimeout(() => {
+    detailsPanel.classList.add('visible');
+    overlay.classList.add('visible');
+    document.body.classList.add('details-open');
+  }, 10);
   
-  // Event-Listener für "Spielen"-Button
-  detailsPanel.querySelector('.play-game-btn').addEventListener('click', () => {
-    this.launchGame(gameInfo.directory);
-  });
+  // Event listener for closing detail view
+  const closePanel = () => {
+    console.log('Closing game details panel');
+    detailsPanel.classList.remove('visible');
+    overlay.classList.remove('visible');
+    document.body.classList.remove('details-open');
+    
+    setTimeout(() => {
+      detailsPanel.remove();
+      overlay.remove();
+    }, 300);
+  };
   
-  // Event-Listener für "Bearbeiten"-Button
-  detailsPanel.querySelector('.edit-game-btn').addEventListener('click', () => {
-    this.showEditGameModal(gameInfo);
-  });
+  detailsPanel.querySelector('.toggle-details-btn').addEventListener('click', closePanel);
   
-  // Event-Listener für den Shop-Link, falls vorhanden
-  const storeLink = detailsPanel.querySelector('.store-link');
-  if (storeLink) {
-    storeLink.addEventListener('click', (e) => {
-      e.preventDefault();
-      const { shell } = require('electron');
-      shell.openExternal(storeLink.href);
+  // Close when clicking overlay
+  overlay.addEventListener('click', closePanel);
+  
+  // Close with Escape key
+  const handleEscape = (e) => {
+    if (e.key === 'Escape') {
+      closePanel();
+      document.removeEventListener('keydown', handleEscape);
+    }
+  };
+  document.addEventListener('keydown', handleEscape);
+  
+  // Event listener for "Play" button
+  const playBtn = detailsPanel.querySelector('.play-game-btn');
+  if (playBtn) {
+    playBtn.addEventListener('click', () => {
+      console.log('Play button clicked for:', gameInfo.title);
+      this.launchGame(gameInfo.directory);
     });
   }
+  
+  // Event listener for "Edit" button
+  const editBtn = detailsPanel.querySelector('.edit-game-btn');
+  if (editBtn) {
+    editBtn.addEventListener('click', () => {
+      console.log('Edit button clicked for:', gameInfo.title);
+      this.showEditGameModal(gameInfo);
+    });
+  }
+  
+  // Event listener for "Open Folder" button
+  const openFolderBtn = detailsPanel.querySelector('.open-folder-btn');
+  if (openFolderBtn) {
+    openFolderBtn.addEventListener('click', () => {
+      console.log('Open folder button clicked for:', gameInfo.title);
+      const folderPath = openFolderBtn.dataset.path;
+      if (folderPath) {
+        const { shell } = require('electron');
+        shell.openPath(folderPath);
+      }
+    });
+  }
+  
+  // Event listener for store links
+  const storeLinks = detailsPanel.querySelectorAll('.store-link');
+  storeLinks.forEach(link => {
+    link.addEventListener('click', (e) => {
+      e.preventDefault();
+      console.log('Opening store link:', link.href);
+      const { shell } = require('electron');
+      shell.openExternal(link.href);
+    });
+  });
+  
+  console.log('Game details panel created and event listeners attached');
 }
   // Genre-Filter aktualisieren
   updateGenreFilter() {

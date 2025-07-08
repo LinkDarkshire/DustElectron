@@ -109,12 +109,16 @@ async function selectGameFolder(event, platform, importType) {
         logger.info('DLSITE_DETECTION', 'DLSite ID found in path', { dlsiteId });
         
         try {
+          // Get current game list to determine next internal ID
+          const existingGames = await scanGames();
+          const nextId = existingGames.length + 1;
+          
           // Initialize DLSite Client with NetworkManager
           const networkManager = platformManager.getNetworkManager();
           const dlsiteClient = new DLSiteClient(networkManager);
           
-          // Retrieve game information
-          const dlsiteInfo = await dlsiteClient.getGameInfo(dlsiteId, 'maniax');
+          // Retrieve game information with internal ID for proper image naming
+          const dlsiteInfo = await dlsiteClient.getGameInfo(dlsiteId, 'maniax', nextId);
           
           gameDetails = {
             ...dlsiteInfo,
@@ -135,7 +139,10 @@ async function selectGameFolder(event, platform, importType) {
           gameDetails = {
             title: `DLSite Game ${dlsiteId}`,
             dlsiteId: dlsiteId,
-            source: 'DLSite'
+            source: 'DLSite',
+            developer: 'Unknown Developer',
+            publisher: 'DLSite',
+            genre: 'Visual Novel'
           };
         }
       }
@@ -165,7 +172,10 @@ async function selectGameFolder(event, platform, importType) {
           gameDetails = {
             title: dirName,
             steamAppId: steamAppId,
-            source: 'Steam'
+            source: 'Steam',
+            developer: 'Unknown Developer',
+            publisher: 'Steam',
+            genre: 'Game'
           };
         } catch (error) {
           logger.warn('STEAM_DETECTION', 'Error retrieving Steam information', {
@@ -175,7 +185,10 @@ async function selectGameFolder(event, platform, importType) {
           gameDetails = {
             title: dirName,
             steamAppId: steamAppId,
-            source: 'Steam'
+            source: 'Steam',
+            developer: 'Unknown Developer',
+            publisher: 'Steam',
+            genre: 'Game'
           };
         }
       }
@@ -290,7 +303,7 @@ async function addGameWithPath(event, gameInfo, gameFolder, executablePath) {
     const existingGames = await scanGames();
     const nextId = existingGames.length + 1;
     
-    // Create dustgrain file
+    // Create dustgrain file with ALL DLSite-specific fields
     const dustgrain = {
       internalId: nextId, // Add internal ID
       title: gameInfo.title || dirName,
@@ -298,12 +311,12 @@ async function addGameWithPath(event, gameInfo, gameFolder, executablePath) {
       executablePath: gameFolder,
       version: gameInfo.version || "1.0",
       genre: gameInfo.genre || "Other",
-      releaseDate: gameInfo.releaseDate || new Date().toISOString().split('T')[0],
+      releaseDate: gameInfo.releaseDate || gameInfo.dlsiteReleaseDate || new Date().toISOString().split('T')[0],
       developer: gameInfo.developer || "Unknown",
       publisher: gameInfo.publisher || "Unknown",
       description: gameInfo.description || "",
       source: gameInfo.source || "Local",
-      tags: gameInfo.tags || [],
+      tags: gameInfo.tags || gameInfo.dlsiteTags || [],
       coverImage: gameInfo.coverImage ? gameInfo.coverImage.replace(/\\/g, '/') : "",
       screenshots: gameInfo.screenshots || [],
       lastPlayed: null,
@@ -320,12 +333,20 @@ async function addGameWithPath(event, gameInfo, gameFolder, executablePath) {
       dlsiteTags: gameInfo.dlsiteTags || [],
       dlsiteVoiceActors: gameInfo.dlsiteVoiceActors || [],
       dlsiteReleaseDate: gameInfo.dlsiteReleaseDate || "",
+      dlsiteUpdateDate: gameInfo.dlsiteUpdateDate || "",
       dlsiteFileSize: gameInfo.dlsiteFileSize || "",
+      dlsiteProductFormat: gameInfo.dlsiteProductFormat || [],
+      dlsiteAgeRating: gameInfo.dlsiteAgeRating || "",
+      dlsiteFileFormat: gameInfo.dlsiteFileFormat || "",
+      itchioUrl: gameInfo.itchioUrl || null,
+      
+      // Additional metadata for DLSite games
       language: gameInfo.language || "Unknown",
       authors: gameInfo.authors || [],
       illustrators: gameInfo.illustrators || [],
       scenario: gameInfo.scenario || [],
-      itchioUrl: gameInfo.itchioUrl || null,
+      genreList: gameInfo.genreList || [],
+      productFormat: gameInfo.productFormat || "",
       
       dustVersion: "1.0"
     };
@@ -384,6 +405,10 @@ async function addMultipleGames(event, games) {
     let addedCount = 0;
     let errors = [];
     
+    // Get current game count for ID assignment
+    const existingGames = await scanGames();
+    let nextId = existingGames.length + 1;
+    
     for (const game of games) {
       try {
         // Create target directory
@@ -394,7 +419,7 @@ async function addMultipleGames(event, games) {
           try {
             const networkManager = platformManager.getNetworkManager();
             const dlsiteClient = new DLSiteClient(networkManager);
-            const gameDetails = await dlsiteClient.getGameInfo(game.dlsiteId, 'maniax');
+            const gameDetails = await dlsiteClient.getGameInfo(game.dlsiteId, 'maniax', nextId);
             
             // Override basic information with details
             Object.assign(game, gameDetails);
@@ -412,19 +437,20 @@ async function addMultipleGames(event, games) {
           }
         }
         
-        // Create dustgrain file
+        // Create dustgrain file with ALL DLSite fields
         const dustgrain = {
+          internalId: nextId, // Add internal ID
           title: game.title || dirName,
           executable: game.executable || '',
           executablePath: game.directory,
           version: game.version || "1.0",
           genre: game.genre || "Other",
-          releaseDate: game.releaseDate || new Date().toISOString().split('T')[0],
+          releaseDate: game.releaseDate || game.dlsiteReleaseDate || new Date().toISOString().split('T')[0],
           developer: game.developer || "Unknown",
           publisher: game.publisher || "Unknown",
           description: game.description || "",
           source: game.source || "Local",
-          tags: game.tags || [],
+          tags: game.tags || game.dlsiteTags || [],
           coverImage: game.coverImage || "",
           screenshots: game.screenshots || [],
           lastPlayed: null,
@@ -435,6 +461,24 @@ async function addMultipleGames(event, games) {
           // Platform-specific information
           dlsiteId: game.dlsiteId || null,
           dlsiteCategory: game.dlsiteCategory || 'maniax',
+          dlsiteUrl: game.dlsiteUrl || null,
+          dlsiteCircle: game.dlsiteCircle || null,
+          dlsiteTags: game.dlsiteTags || [],
+          dlsiteVoiceActors: game.dlsiteVoiceActors || [],
+          dlsiteReleaseDate: game.dlsiteReleaseDate || "",
+          dlsiteUpdateDate: game.dlsiteUpdateDate || "",
+          dlsiteFileSize: game.dlsiteFileSize || "",
+          dlsiteProductFormat: game.dlsiteProductFormat || [],
+          dlsiteAgeRating: game.dlsiteAgeRating || "",
+          dlsiteFileFormat: game.dlsiteFileFormat || "",
+          
+          // Additional metadata
+          language: game.language || "Unknown",
+          authors: game.authors || [],
+          illustrators: game.illustrators || [],
+          scenario: game.scenario || [],
+          genreList: game.genreList || [],
+          productFormat: game.productFormat || "",
           
           dustVersion: "1.0"
         };
@@ -443,6 +487,7 @@ async function addMultipleGames(event, games) {
         const success = fileManager.writeDustgrain(dirName, dustgrain);
         if (success) {
           addedCount++;
+          nextId++; // Increment for next game
           logger.info('ADD_MULTIPLE_GAMES', 'Game added successfully', {
             title: dustgrain.title,
             directory: dirName
