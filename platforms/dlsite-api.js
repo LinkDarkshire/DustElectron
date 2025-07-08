@@ -20,7 +20,7 @@ class DLSiteClient {
     this.locale = locale;
     this.assetsPath = assetsPath;
     this.networkManager = networkManager;
-    
+
     // Set up headers with proper language support
     this.headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
@@ -28,25 +28,25 @@ class DLSiteClient {
       'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
       'Accept-Encoding': 'gzip, deflate, br'
     };
-    
+
     // Set up cookies with proper locale support
     this.cookies = {
       adultchecked: '1'
     };
-    
+
     // Add locale cookie for English support
     if (this.locale === 'en_US') {
       this.cookies.locale = 'en_US';
     }
-    
+
     // Ensure assets folder exists
     if (!fs.existsSync(this.assetsPath)) {
       fs.mkdirSync(this.assetsPath, { recursive: true });
     }
-    
+
     // Cache for downloaded images
     this.imageCache = new Map();
-    
+
     const logger = getLogger();
     logger.info('DLSITE_CLIENT', 'DLSite Client initialized', {
       locale: this.locale,
@@ -87,7 +87,7 @@ class DLSiteClient {
    */
   _ensureAbsoluteUrl(url) {
     if (!url) return null;
-    
+
     if (url.startsWith('//')) {
       return `https:${url}`;
     } else if (!url.startsWith('http://') && !url.startsWith('https://')) {
@@ -97,7 +97,7 @@ class DLSiteClient {
         return `https://www.dlsite.com/${url}`;
       }
     }
-    
+
     return url;
   }
 
@@ -132,7 +132,7 @@ class DLSiteClient {
       logger.info('DLSITE_API', 'Retrieving product information', { productId });
 
       const url = `https://www.dlsite.com/maniax/product/info/ajax?product_id=${productId}&locale=${this.locale}`;
-      
+
       const response = await this.networkManager.makeRequest(url, {
         headers: {
           ...this.headers,
@@ -145,23 +145,23 @@ class DLSiteClient {
       }
 
       const data = await response.json();
-      
+
       if (!data || !data[productId]) {
         throw new Error(`No product information found for: ${productId}`);
       }
-      
+
       // Ensure all URLs are absolute
       const result = data[productId];
       if (result.work_image) {
         result.work_image = this._ensureAbsoluteUrl(result.work_image);
       }
-      
+
       logger.info('DLSITE_API', 'Product information successfully retrieved', {
         productId,
         title: result.work_name,
         apiTime: 'completed'
       });
-      
+
       return result;
     } catch (error) {
       const logger = getLogger();
@@ -207,7 +207,7 @@ class DLSiteClient {
       for (const url of urls) {
         try {
           logger.debug('DLSITE_SCRAPE', `Trying URL: ${url}`);
-          
+
           response = await this.networkManager.makeRequest(url, {
             headers: {
               ...this.headers,
@@ -239,16 +239,16 @@ class DLSiteClient {
       return this.parseWorkHTML(html, finalUrl);
     } catch (error) {
       const logger = getLogger();
-      logger.error('DLSITE_SCRAPE', 'Error retrieving product details', { 
-        productId, 
-        category, 
-        error: error.message 
+      logger.error('DLSITE_SCRAPE', 'Error retrieving product details', {
+        productId,
+        category,
+        error: error.message
       });
       throw error;
     }
   }
 
-/**
+  /**
    * Parses HTML from a work page for detailed information with enhanced language support
    * @private
    * @param {string} html - HTML content of work page
@@ -258,30 +258,26 @@ class DLSiteClient {
   parseWorkHTML(html, baseUrl) {
     const $ = cheerio.load(html);
     const details = {};
-    
+
     const logger = getLogger();
-    logger.info('DLSITE_API_TEST', '🔥 NEW PARSER VERSION IS RUNNING 🔥', {
-      testMessage: 'If you see this, the new code is loaded!'
-    });
-    
-    logger.debug('DLSITE_API_SCRAPE', 'Starting HTML parsing', { 
+    logger.info('DLSITE_API_PARSE', 'Starting HTML parsing for work details', {
       htmlLength: html.length,
-      baseUrl 
+      baseUrl
     });
-    
+
     // Basic information
     details.work_name = $('#work_name').text().trim();
-    logger.info('DLSITE_API_PARSE', 'Basic info extracted', {
+    logger.info('DLSITE_API_PARSE', 'Work name extracted', {
       work_name: details.work_name
     });
-    
+
     // Circle/Maker name
     const makerName = $('span.maker_name a').text().trim();
     details.circle = makerName;
-    logger.info('DLSITE_API_PARSE', 'Circle info extracted', {
+    logger.info('DLSITE_API_PARSE', 'Circle extracted', {
       circle: details.circle
     });
-    
+
     // Cover image with multiple fallbacks
     let coverImg = $('#work_left .product-slider-data div img');
     if (!coverImg.length) {
@@ -290,7 +286,7 @@ class DLSiteClient {
     if (!coverImg.length) {
       coverImg = $('.work_image img');
     }
-    
+
     if (coverImg.length) {
       let coverImageSrc = coverImg.first().attr('src') || coverImg.first().attr('data-src');
       details.coverImage = this._ensureAbsoluteUrl(coverImageSrc);
@@ -299,162 +295,209 @@ class DLSiteClient {
       });
     }
 
-    // Get the work outline text for parsing structured data
-    const workOutlineText = $('#work_outline').text();
-    
-    logger.info('DLSITE_API_TEXT_DEBUG', 'Work outline text for parsing', {
-      workOutlineLength: workOutlineText.length,
-      workOutlineText: workOutlineText
+    // Parse structured data from work outline table - this is the correct approach
+    $('#work_outline tr').each((i, row) => {
+      const $row = $(row);
+      const header = $row.find('th').text().trim();
+      const $cell = $row.find('td');
+
+      logger.debug('DLSITE_API_TABLE', 'Processing table row', {
+        header,
+        cellHtml: $cell.html()
+      });
+
+      // Map headers to field names with proper categorization
+      const fieldMappings = {
+        'Release date': 'release_date',
+        '販売日': 'release_date',
+        'Update information': 'update_date',
+        'Voice Actor': 'voice_actor',
+        '声優': 'voice_actor',
+        'Age': 'age_rating',
+        '年齢指定': 'age_rating',
+        'Product format': 'product_format',
+        '作品形式': 'product_format',
+        'File format': 'file_format',
+        'ファイル形式': 'file_format',
+        'Supported languages': 'language',
+        '対応言語': 'language',
+        'File size': 'file_size',
+        'ファイル容量': 'file_size',
+        'Genre': 'genre',
+        'ジャンル': 'genre'
+      };
+
+      const fieldName = fieldMappings[header];
+      if (fieldName) {
+        logger.info('DLSITE_API_TABLE', 'Processing mapped field', {
+          header,
+          fieldName
+        });
+
+        if (fieldName === 'product_format') {
+          // Special handling for product format - only extract from THIS specific row
+          const formatItems = [];
+
+          // Look for spans with title attributes in this specific Product format row only
+          $cell.find('span[title]').each((j, span) => {
+            const title = $(span).attr('title');
+            if (title && title.trim()) {
+              const formatText = title.trim();
+              formatItems.push(formatText);
+              logger.info('DLSITE_API_FORMAT', 'Product format item extracted from Product format row', {
+                formatText
+              });
+            }
+          });
+
+          // If no spans with titles, try link text from this row only
+          if (formatItems.length === 0) {
+            $cell.find('a').each((j, link) => {
+              const linkText = $(link).text().trim();
+              if (linkText && linkText !== '') {
+                formatItems.push(linkText);
+                logger.info('DLSITE_API_FORMAT', 'Product format from link text in Product format row', {
+                  linkText
+                });
+              }
+            });
+          }
+
+          details[fieldName] = formatItems;
+          logger.info('DLSITE_API_FORMAT', 'Final product format result (from Product format row only)', {
+            productFormat: formatItems,
+            formatCount: formatItems.length
+          });
+
+        } else if (fieldName === 'voice_actor') {
+          // Parse voice actors
+          const voiceActors = [];
+          $cell.find('a').each((j, link) => {
+            const actorName = $(link).text().trim();
+            if (actorName) {
+              voiceActors.push(actorName);
+            }
+          });
+
+          if (voiceActors.length === 0) {
+            // Fallback to text parsing
+            const cellText = $cell.text().trim();
+            if (cellText) {
+              voiceActors.push(...cellText.split(/[\/,、]/).map(s => s.trim()).filter(s => s));
+            }
+          }
+
+          details[fieldName] = voiceActors;
+          logger.info('DLSITE_API_TABLE', 'Voice actors extracted', {
+            voiceActors
+          });
+
+        } else if (fieldName === 'genre') {
+          // Parse genres from links
+          const genres = [];
+          $cell.find('a').each((j, link) => {
+            const genreText = $(link).text().trim();
+            if (genreText) {
+              genres.push(genreText);
+            }
+          });
+          details[fieldName] = genres;
+          logger.info('DLSITE_API_TABLE', 'Genres extracted', {
+            genres
+          });
+
+        } else if (fieldName === 'age_rating') {
+          // Extract age rating from span title or text
+          let ageRating = '';
+          const $ageSpan = $cell.find('span[title]');
+          if ($ageSpan.length) {
+            ageRating = $ageSpan.attr('title') || $ageSpan.text().trim();
+          } else {
+            ageRating = $cell.text().trim();
+          }
+          details[fieldName] = ageRating;
+          logger.info('DLSITE_API_TABLE', 'Age rating extracted', {
+            ageRating
+          });
+
+        } else if (fieldName === 'file_format') {
+          // Extract file format from span title or text
+          let fileFormat = '';
+          const $formatSpan = $cell.find('span[title]');
+          if ($formatSpan.length) {
+            fileFormat = $formatSpan.attr('title') || $formatSpan.text().trim();
+          } else {
+            fileFormat = $cell.text().trim();
+          }
+          details[fieldName] = fileFormat;
+          logger.info('DLSITE_API_TABLE', 'File format extracted', {
+            fileFormat
+          });
+
+        } else if (fieldName === 'language') {
+          // Extract supported languages from span title or text
+          let language = '';
+          const $langSpan = $cell.find('span[title]');
+          if ($langSpan.length) {
+            language = $langSpan.attr('title') || $langSpan.text().trim();
+          } else {
+            language = $cell.text().trim();
+          }
+          details[fieldName] = language;
+          logger.info('DLSITE_API_TABLE', 'Language extracted', {
+            language
+          });
+
+        } else {
+          // Simple text field - clean up the text
+          let cellText = $cell.text().trim();
+
+          // Clean up update information field specifically
+          if (fieldName === 'update_date') {
+            // Remove extra whitespace and "Update information" text
+            cellText = cellText.replace(/\s+/g, ' ').replace(/\s*Update information\s*$/, '').trim();
+          }
+
+          details[fieldName] = cellText;
+          logger.info('DLSITE_API_TABLE', 'Text field extracted', {
+            fieldName,
+            value: cellText
+          });
+        }
+      }
     });
 
-    // Parse structured data from work outline using text patterns
-    // Release date
-    const releaseDateMatch = workOutlineText.match(/Release date\s+([A-Za-z]{3}\/\d{2}\/\d{4})/i) ||
-                            workOutlineText.match(/販売日\s+(\d{4}年\d{1,2}月\d{1,2}日)/);
-    if (releaseDateMatch) {
-      details.release_date = releaseDateMatch[1];
-      logger.info('DLSITE_API_FIELD', 'Release date extracted', {
-        releaseDate: details.release_date
-      });
+    // Convert product_format array to string for backward compatibility
+    if (details.product_format && Array.isArray(details.product_format)) {
+      details.product_format = details.product_format.join(', ');
     }
-
-    // Update information
-    const updateMatch = workOutlineText.match(/Update information\s+([A-Za-z]{3}\s+\d{2}\s+\d{4})/i);
-    if (updateMatch) {
-      details.update_date = updateMatch[1];
-      logger.info('DLSITE_API_FIELD', 'Update date extracted', {
-        updateDate: details.update_date
-      });
-    }
-
-    // Voice Actors
-    const voiceActorMatch = workOutlineText.match(/Voice Actor\s+([^A-Z\n]+?)(?=\s+Age|\s+Product format|\s+File format|$)/i);
-    if (voiceActorMatch) {
-      details.voice_actor = voiceActorMatch[1].split(/[\/,、]/).map(s => s.trim()).filter(s => s);
-      logger.info('DLSITE_API_FIELD', 'Voice actors extracted', {
-        voiceActors: details.voice_actor
-      });
-    }
-
-    // Age rating
-    const ageMatch = workOutlineText.match(/Age\s+(R18|All-ages)/i);
-    if (ageMatch) {
-      details.age_rating = ageMatch[1];
-      logger.info('DLSITE_API_FIELD', 'Age rating extracted', {
-        ageRating: details.age_rating
-      });
-    }
-
-    // Product format
-    const productFormatMatch = workOutlineText.match(/Product format\s+([^F\n]+?)(?=\s+File format|\s+Supported languages|$)/i);
-    if (productFormatMatch) {
-      details.product_format = productFormatMatch[1].trim();
-      logger.info('DLSITE_API_FIELD', 'Product format extracted', {
-        productFormat: details.product_format
-      });
-    }
-
-    // File format
-    const fileFormatMatch = workOutlineText.match(/File format\s+([^S\n]+?)(?=\s+Supported languages|\s+Genre|$)/i);
-    if (fileFormatMatch) {
-      details.file_format = fileFormatMatch[1].trim();
-      logger.info('DLSITE_API_FIELD', 'File format extracted', {
-        fileFormat: details.file_format
-      });
-    }
-
-    // Supported languages
-    const languageMatch = workOutlineText.match(/Supported languages\s+([^G\n]+?)(?=\s+Genre|\s+File size|$)/i);
-    if (languageMatch) {
-      details.language = languageMatch[1].trim();
-      logger.info('DLSITE_API_FIELD', 'Language extracted', {
-        language: details.language
-      });
-    }
-
-    // File size
-    const fileSizeMatch = workOutlineText.match(/File size\s+([\d.]+\s*[KMGT]B)/i);
-    if (fileSizeMatch) {
-      details.file_size = fileSizeMatch[1];
-      logger.info('DLSITE_API_FIELD', 'File size extracted', {
-        fileSize: details.file_size
-      });
-    }
-
-    // Genre extraction - extract actual genre tags, not metadata
-    details.genre = [];
-    const genreMatch = workOutlineText.match(/Genre\s+(.*?)(?=\s+File size|$)/is);
-    if (genreMatch) {
-      const genreText = genreMatch[1];
-      // Split by common separators and clean up
-      const genreList = genreText.split(/\s{2,}|\n/).map(g => g.trim()).filter(g => {
-        // Filter out empty strings and non-genre items
-        return g && 
-               g !== 'File size' && 
-               g !== 'Application' && 
-               g !== 'Japanese' && 
-               g !== 'R18' && 
-               g !== 'Role-playing' && 
-               g !== 'Voice' &&
-               !g.match(/^\d/); // Don't include file sizes
-      });
-      
-      details.genre = genreList;
-      logger.info('DLSITE_API_FIELD', 'Genres extracted', {
-        genres: details.genre,
-        rawGenreText: genreText
-      });
-    }
-
-    // Extract tags (same as genre for now)
-    details.tags = [...details.genre];
 
     // Get the actual game description from work_parts
     let description = '';
     const workPartsText = $('.work_parts').text();
-    
-    logger.info('DLSITE_API_DESC_DEBUG', 'Work parts analysis', {
-      workPartsLength: workPartsText.length,
-      workPartsSnippet: workPartsText.substring(0, 1000)
-    });
 
-    // Extract character descriptions and game info from work_parts
     if (workPartsText.length > 100) {
-      // Find the character introduction section
+      // Find character introduction section
       const characterMatch = workPartsText.match(/キャラクター紹介\s*(.*?)(?=エロステータス|エンディング|$)/s);
       if (characterMatch) {
         let characterInfo = characterMatch[1].trim();
-        
-        // Clean up the character info
-        characterInfo = characterInfo
-          .replace(/\s+/g, ' ')
-          .replace(/\n+/g, '\n')
-          .trim();
-        
+        characterInfo = characterInfo.replace(/\s+/g, ' ').replace(/\n+/g, '\n').trim();
         description = characterInfo;
         logger.info('DLSITE_API_DESC', 'Character description extracted', {
-          descriptionLength: description.length,
-          description: description.substring(0, 500) + '...'
+          descriptionLength: description.length
         });
       }
     }
 
     // If no character description found, try alternative selectors
     if (!description) {
-      const altDescSelectors = [
-        '.work_parts_text',
-        '.product_outline',
-        '.work_article .work_parts_text'
-      ];
-      
+      const altDescSelectors = ['.work_parts_text', '.product_outline', '.work_article .work_parts_text'];
+
       for (const selector of altDescSelectors) {
         const descElement = $(selector);
         if (descElement.length) {
-          let descText = descElement.text().trim();
-          
-          // Clean up and filter
-          descText = descText.replace(/\s+/g, ' ').trim();
-          
+          let descText = descElement.text().trim().replace(/\s+/g, ' ').trim();
+
           if (descText && descText.length > 50) {
             description = descText;
             logger.info('DLSITE_API_DESC', 'Alternative description found', {
@@ -466,7 +509,7 @@ class DLSiteClient {
         }
       }
     }
-    
+
     details.description = description;
 
     // Sample images
@@ -481,32 +524,23 @@ class DLSiteClient {
       }
     });
 
-    // Final summary of extracted data
-    logger.info('DLSITE_API_SCRAPE', 'Detailed information successfully parsed', {
+    // Extract tags (same as genre for now)
+    details.tags = [...(details.genre || [])];
+
+    // Final summary
+    logger.info('DLSITE_API_PARSE', 'HTML parsing completed successfully', {
       title: details.work_name,
       circle: details.circle,
       fieldsExtracted: Object.keys(details).length,
-      hasReleaseDate: !!details.release_date,
-      releaseDate: details.release_date || 'NOT_FOUND',
-      hasUpdateDate: !!details.update_date,
-      updateDate: details.update_date || 'NOT_FOUND',
-      hasFileSize: !!details.file_size,
-      fileSize: details.file_size || 'NOT_FOUND',
-      hasVoiceActors: !!(details.voice_actor && details.voice_actor.length > 0),
-      voiceActors: details.voice_actor || [],
-      hasAgeRating: !!details.age_rating,
-      ageRating: details.age_rating || 'NOT_FOUND',
-      hasProductFormat: !!details.product_format,
-      productFormat: details.product_format || 'NOT_FOUND',
-      hasFileFormat: !!details.file_format,
-      fileFormat: details.file_format || 'NOT_FOUND',
+      productFormat: details.product_format,
+      ageRating: details.age_rating,
+      fileFormat: details.file_format,
+      language: details.language,
+      hasDescription: !!details.description,
       descriptionLength: (details.description || '').length,
-      genreCount: details.genre ? details.genre.length : 0,
-      tagCount: details.tags ? details.tags.length : 0,
-      allExtractedFields: Object.keys(details).reduce((acc, key) => {
-        acc[key] = details[key];
-        return acc;
-      }, {})
+      genreCount: (details.genre || []).length,
+      tagCount: (details.tags || []).length,
+      sampleImageCount: details.sample_images.length
     });
 
     return details;
@@ -528,7 +562,7 @@ class DLSiteClient {
       });
       return fallbackId;
     }
-    
+
     const prefix = internalId ? `${String(internalId).padStart(5, '0')}_` : '';
     return `${prefix}dlsite_${productId.toLowerCase()}`;
   }
@@ -543,18 +577,18 @@ class DLSiteClient {
   async downloadImage(imageUrl, productId, internalId = null) {
     try {
       const logger = getLogger();
-      
+
       if (!imageUrl) {
         logger.warn('DLSITE_IMAGE', 'No image URL provided for download');
         return null;
       }
-      
+
       logger.info('DLSITE_IMAGE', 'Starting image download', {
         imageUrl,
         productId,
         internalId
       });
-      
+
       // Ensure ProductId is defined
       if (!productId || productId === 'undefined' || productId === 'null') {
         logger.warn('DLSITE_IMAGE', 'No valid product ID provided for image naming');
@@ -567,29 +601,29 @@ class DLSiteClient {
           productId = "unknown";
         }
       }
-      
+
       // Ensure URL is absolute
       const absoluteUrl = this._ensureAbsoluteUrl(imageUrl);
-      
+
       if (!absoluteUrl) {
         logger.warn('DLSITE_IMAGE', `Could not create absolute URL from ${imageUrl}`);
         return null;
       }
-      
+
       // Check cache if image was already downloaded
       const cacheKey = absoluteUrl;
       if (this.imageCache.has(cacheKey)) {
         return this.imageCache.get(cacheKey);
       }
-      
+
       const response = await this._makeRequest(absoluteUrl, {
         headers: this.headers
       });
-      
+
       if (!response.ok) {
         throw new Error(`HTTP error during image download: ${response.status}`);
       }
-      
+
       // Use hexadecimal number with 5 digits for internal ID
       let idPrefix;
       if (internalId) {
@@ -597,62 +631,62 @@ class DLSiteClient {
       } else {
         idPrefix = "00001"; // Default for first game
       }
-      
+
       const extension = path.extname(absoluteUrl) || '.jpg';
       const fileName = `${idPrefix}_dlsite_${productId}${extension}`;
       const filePath = path.join(this.assetsPath, fileName);
       const webPath = `assets/games/${fileName}`.replace(/\\/g, '/');
-      
+
       // Stream for saving the image
       const buffer = await response.buffer();
       fs.writeFileSync(filePath, buffer);
-      
+
       logger.info('DLSITE_IMAGE', 'Image successfully downloaded', {
         absoluteUrl,
         filePath: webPath,
         webPath,
         fileSize: buffer.length
       });
-      
+
       // Save path in cache
       this.imageCache.set(cacheKey, webPath);
-      
+
       return webPath;
     } catch (error) {
       const logger = getLogger();
-      logger.error('DLSITE_IMAGE', 'Error downloading image', { 
-        imageUrl, 
-        productId, 
-        error: error.message 
+      logger.error('DLSITE_IMAGE', 'Error downloading image', {
+        imageUrl,
+        productId,
+        error: error.message
       });
       return null;
     }
   }
 
-/**
-   * Creates a game info object from combined API and HTML data
-   * @param {Object} basicInfo - Basic information from AJAX API
-   * @param {Object} details - Detailed information from HTML parsing
-   * @param {number} internalId - Internal game ID (optional)
-   * @returns {Promise<Object>} - Game information formatted for Dust Game Manager
-   */
+  /**
+     * Creates a game info object from combined API and HTML data
+     * @param {Object} basicInfo - Basic information from AJAX API
+     * @param {Object} details - Detailed information from HTML parsing
+     * @param {number} internalId - Internal game ID (optional)
+     * @returns {Promise<Object>} - Game information formatted for Dust Game Manager
+     */
   async createGameInfo(basicInfo, details, internalId = null) {
     const logger = getLogger();
-    
+
     // Ensure we have a valid product ID
-    const productId = (basicInfo && basicInfo.product_id) ? basicInfo.product_id : 
-                    (details && details.productId) ? details.productId : null;
-    
+    const productId = (basicInfo && basicInfo.product_id) ? basicInfo.product_id :
+      (details && details.productId) ? details.productId : null;
+
     logger.info('DLSITE_PROCESS', 'Creating game info object', {
       productId,
       internalId,
       hasBasicInfo: !!basicInfo,
       hasDetails: !!details
     });
-    
+
     // Generate unique ID for the game
     const gameId = this.generateGameId(productId, internalId);
-    
+
     // Download image
     let coverImagePath = null;
     if (details && details.coverImage) {
@@ -660,9 +694,9 @@ class DLSiteClient {
     } else if (basicInfo && basicInfo.work_image) {
       coverImagePath = await this.downloadImage(basicInfo.work_image, productId, internalId);
     }
-    
+
     // Process genres - filter out technical metadata
-    const filteredGenres = (details && details.genre) ? 
+    const filteredGenres = (details && details.genre) ?
       details.genre.filter(genre => {
         // Filter out technical metadata that shouldn't be in genres
         const excludeFromGenres = [
@@ -675,23 +709,33 @@ class DLSiteClient {
         ];
         return !excludeFromGenres.includes(genre);
       }) : [];
-    
+
     // Combine filtered genres with tags for more complete information
     const allTags = [...new Set([
       ...filteredGenres,
       ...(details && details.tags ? details.tags.filter(tag => !['R18', 'Application', 'Japanese', 'Role-playing', 'Voice'].includes(tag)) : [])
     ])];
-    
+    console.log('=== DEBUGGING DETAILS OBJECT ===');
+    console.log('Complete details object:', details);
+    console.log('details.product_format:', details.product_format);
+    console.log('All keys in details:', Object.keys(details || {}));
+    console.log('=== END DETAILS DEBUG ===');
+
     const gameInfo = {
       id: gameId,
       title: (details && details.work_name) || (basicInfo && basicInfo.work_name) || `DLSite Game ${productId}`,
       developer: (details && details.circle) || (basicInfo && basicInfo.maker_name) || "Unknown Developer",
       publisher: (details && details.publisher) || (details && details.circle) || (basicInfo && basicInfo.maker_name) || "DLSite",
+      productFormat: (details && details.product_format) || "",
+      ageRating: (details && details.age_rating) || (basicInfo && basicInfo.age_rating) || "R18",
+      fileFormat: (details && details.file_format) || (basicInfo && basicInfo.file_format) || "Unknown",
       genre: filteredGenres.length > 0 ? filteredGenres[0] : "Visual Novel", // First actual genre, not technical metadata
+      releaseDate: (details && details.release_date) || (basicInfo && basicInfo.regist_date) || "",
+      updateDate: (details && details.update_date) || "",
       description: (details && details.description) || (basicInfo && basicInfo.description) || `A game from DLSite with ID ${productId}`,
       coverImage: coverImagePath || "",
       source: "DLSite",
-      
+
       // Additional DLSite-specific information
       dlsiteId: productId,
       dlsiteUrl: `https://www.dlsite.com/maniax/work/=/product_id/${productId}.html`,
@@ -704,18 +748,22 @@ class DLSiteClient {
       dlsiteAgeRating: (details && details.age_rating) || "",
       dlsiteProductFormat: (details && details.product_format) || "",
       dlsiteFileFormat: (details && details.file_format) || "",
-      
+
       // Additional metadata
       language: (details && details.language) || "Japanese",
       authors: (details && details.author) || [],
       illustrators: (details && details.illustration) || [],
       scenario: (details && details.scenario) || [],
-      
+
       // Genre list for search functionality
       genreList: filteredGenres,
       productFormat: (details && details.product_format) || ""
     };
-    
+
+    console.log('=== FINAL GAMEINFO PRODUCT FORMAT ===');
+    console.log('Final productFormat value:', gameInfo.productFormat);
+    console.log('=== END FINAL DEBUG ===');
+
     logger.info('DLSITE_PROCESS', 'Game info object created', {
       gameId,
       title: gameInfo.title,
@@ -730,6 +778,11 @@ class DLSiteClient {
       productFormat: gameInfo.dlsiteProductFormat,
       voiceActorCount: gameInfo.dlsiteVoiceActors.length
     });
+
+    console.log('=== FINAL GAMEINFO BEFORE RETURN ===');
+    console.log('About to return gameInfo with productFormat:', gameInfo.productFormat);
+    console.log('Complete final gameInfo:', gameInfo);
+    console.log('=== END FINAL DEBUG ===');
     
     return gameInfo;
   }
@@ -762,7 +815,7 @@ class DLSiteClient {
         logger.warn('DLSITE_MAIN', `Could not retrieve basic info for ${productId}`, { error: error.message });
         basicInfo = { product_id: productId };
       }
-      
+
       // Retrieve detailed info from HTML
       let details = null;
       try {
@@ -776,27 +829,27 @@ class DLSiteClient {
         logger.warn('DLSITE_MAIN', `Could not retrieve detailed info for ${productId}`, { error: error.message });
         details = { productId: productId };
       }
-      
+
       // Combine both information sources
       const gameInfo = await this.createGameInfo(basicInfo, details, internalId);
-      
+
       logger.info('DLSITE_MAIN', 'Complete information retrieval finished', {
         productId,
         gameId: gameInfo.id,
         title: gameInfo.title,
         success: true
       });
-      
+
       return gameInfo;
     } catch (error) {
       const logger = getLogger();
-      logger.error('DLSITE_MAIN', 'Error retrieving game information', { 
-        productId, 
-        category, 
-        internalId, 
-        error: error.message 
+      logger.error('DLSITE_MAIN', 'Error retrieving game information', {
+        productId,
+        category,
+        internalId,
+        error: error.message
       });
-      
+
       // Create fallback object with generated ID
       const gameId = this.generateGameId(productId, internalId);
       return {
@@ -815,7 +868,7 @@ class DLSiteClient {
       };
     }
   }
-  
+
   /**
    * Attempts to extract a DLSite ID from a folder path
    * @param {string} folderPath - Folder path to check
@@ -828,20 +881,20 @@ class DLSiteClient {
       if (match) {
         return match[0].toUpperCase();
       }
-      
+
       // Try to check folder name
       const dirName = path.basename(folderPath);
       const dirMatch = dirName.match(/[BRV]J\d{6,8}/i);
       if (dirMatch) {
         return dirMatch[0].toUpperCase();
       }
-      
+
       return null;
     } catch (error) {
       const logger = getLogger();
-      logger.warn('DLSITE_EXTRACT', `Error extracting DLSite ID from path`, { 
-        folderPath, 
-        error: error.message 
+      logger.warn('DLSITE_EXTRACT', `Error extracting DLSite ID from path`, {
+        folderPath,
+        error: error.message
       });
       return null;
     }

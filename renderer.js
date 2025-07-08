@@ -18,11 +18,11 @@ class DustApp {
     this.loadGames();
     this.initVPNWidget(); // Am Ende aufrufen
   }
-  
+
   // Event-Listener initialisieren
   initEventListeners() {
     console.log('Event Listeners werden initialisiert...');
-    
+
     // Navigation
     document.querySelectorAll('.nav-button').forEach(button => {
       button.addEventListener('click', () => {
@@ -38,7 +38,7 @@ class DustApp {
         this.applyFilters();
       });
     }
-    
+
     // "Spiel hinzufügen" Button
     const addGameBtn = document.getElementById('add-game-btn');
     if (addGameBtn) {
@@ -47,22 +47,22 @@ class DustApp {
         this.showAddGameModal();
       });
     }
-    
+
     console.log('Alle Event Listeners installiert');
   }
 
   // VPN Widget initialisieren
   initVPNWidget() {
     console.log('VPN Widget wird initialisiert...');
-    
+
     this.vpnStatus = 'disconnected';
     this.selectedVPNConfig = null;
     this.vpnConfigs = [];
-    
+
     // Event Listeners für VPN-Steuerung
     const vpnToggleBtn = document.getElementById('vpn-toggle-btn');
     const vpnConfigBtn = document.getElementById('vpn-config-btn');
-    
+
     if (vpnToggleBtn) {
       vpnToggleBtn.addEventListener('click', () => {
         console.log('VPN Toggle Button geklickt');
@@ -73,20 +73,20 @@ class DustApp {
         }
       });
     }
-    
+
     if (vpnConfigBtn) {
       vpnConfigBtn.addEventListener('click', () => {
         console.log('VPN Config Button geklickt');
         this.showVPNConfigModal();
       });
     }
-    
+
     // Lade verfügbare VPN-Konfigurationen
     this.loadVPNConfigs();
-    
+
     console.log('VPN Widget initialisiert');
 
-        // Suchfeld
+    // Suchfeld
     const searchInput = document.querySelector('.search-bar');
     if (searchInput) {
       searchInput.addEventListener('input', (e) => {
@@ -94,7 +94,7 @@ class DustApp {
         this.applyFilters();
       });
     }
-    
+
     // Ansicht ändern (Grid/Liste)
     const viewToggleBtn = document.getElementById('view-toggle');
     if (viewToggleBtn) {
@@ -102,7 +102,7 @@ class DustApp {
         this.toggleView();
       });
     }
-    
+
     // Filter für Genre
     const genreFilter = document.getElementById('genre-filter');
     if (genreFilter) {
@@ -111,7 +111,7 @@ class DustApp {
         this.applyFilters();
       });
     }
-    
+
     // Filter für Quelle
     const sourceFilter = document.getElementById('source-filter');
     if (sourceFilter) {
@@ -120,7 +120,7 @@ class DustApp {
         this.applyFilters();
       });
     }
-    
+
     // "Spiel hinzufügen" Button
     const addGameBtn = document.getElementById('add-game-btn');
     if (addGameBtn) {
@@ -128,7 +128,7 @@ class DustApp {
         this.showAddGameModal();
       });
     }
-    
+
     // Spiel-Kontextmenü
     document.addEventListener('contextmenu', (e) => {
       const gameCard = e.target.closest('.game-card');
@@ -137,7 +137,7 @@ class DustApp {
         this.showGameContextMenu(gameCard, e.pageX, e.pageY);
       }
     });
-    
+
     // Klick außerhalb des Kontextmenüs schließt es
     document.addEventListener('click', () => {
       const contextMenu = document.getElementById('context-menu');
@@ -145,7 +145,7 @@ class DustApp {
         contextMenu.remove();
       }
     });
-    
+
     // Spiel starten beim Doppelklick auf ein Spiel
     document.addEventListener('dblclick', (e) => {
       const gameCard = e.target.closest('.game-card');
@@ -159,20 +159,20 @@ class DustApp {
   // VPN Status aktualisieren
   updateVPNStatus(status, message = '') {
     this.vpnStatus = status;
-    
+
     const statusLight = document.getElementById('vpn-status-light');
     const statusText = document.getElementById('vpn-status-text');
     const toggleBtn = document.getElementById('vpn-toggle-btn');
-    
+
     if (!statusLight || !statusText || !toggleBtn) {
       console.warn('VPN UI Elemente nicht gefunden');
       return;
     }
-    
+
     // Entferne alle Status-Klassen
     statusLight.classList.remove('connected', 'connecting');
     toggleBtn.classList.remove('connected', 'connecting');
-    
+
     switch (status) {
       case 'connected':
         statusLight.classList.add('connected');
@@ -181,7 +181,7 @@ class DustApp {
         toggleBtn.innerHTML = '<i class="fas fa-power-off"></i><span>Disconnect</span>';
         toggleBtn.disabled = false;
         break;
-        
+
       case 'connecting':
         statusLight.classList.add('connecting');
         statusText.textContent = 'Connecting...';
@@ -189,7 +189,7 @@ class DustApp {
         toggleBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i><span>Connecting...</span>';
         toggleBtn.disabled = true;
         break;
-        
+
       case 'disconnected':
       default:
         statusText.textContent = message || 'Disconnected';
@@ -205,12 +205,12 @@ class DustApp {
       this.showNotification('Bitte wähle zuerst eine VPN-Konfiguration aus', 'error');
       return;
     }
-    
+
     try {
       this.updateVPNStatus('connecting');
-      
+
       const result = await ipcRenderer.invoke('enable-vpn', this.selectedVPNConfig);
-      
+
       if (result.success) {
         this.updateVPNStatus('connected');
         this.showNotification('VPN erfolgreich verbunden', 'success');
@@ -228,9 +228,9 @@ class DustApp {
   async disconnectVPN() {
     try {
       this.updateVPNStatus('connecting');
-      
+
       const result = await ipcRenderer.invoke('disable-vpn');
-      
+
       if (result.success) {
         this.updateVPNStatus('disconnected');
         this.showNotification('VPN getrennt', 'info');
@@ -245,30 +245,30 @@ class DustApp {
     }
   }
 
-async checkVPNStatus() {
-  try {
-    const status = await ipcRenderer.invoke('get-vpn-status');
-    
-    // Status nur aktualisieren, wenn er sich geändert hat
-    if (status.connected && this.vpnStatus !== 'connected') {
-      this.updateVPNStatus('connected');
-    } else if (!status.connected && this.vpnStatus === 'connected') {
-      this.updateVPNStatus('disconnected', 'Connection lost');
-      this.showNotification('VPN-Verbindung verloren', 'error');
+  async checkVPNStatus() {
+    try {
+      const status = await ipcRenderer.invoke('get-vpn-status');
+
+      // Status nur aktualisieren, wenn er sich geändert hat
+      if (status.connected && this.vpnStatus !== 'connected') {
+        this.updateVPNStatus('connected');
+      } else if (!status.connected && this.vpnStatus === 'connected') {
+        this.updateVPNStatus('disconnected', 'Connection lost');
+        this.showNotification('VPN-Verbindung verloren', 'error');
+      }
+    } catch (error) {
+      console.error('Fehler beim Prüfen des VPN-Status:', error);
     }
-  } catch (error) {
-    console.error('Fehler beim Prüfen des VPN-Status:', error);
   }
-}
 
   // VPN Konfigurationen laden
   async loadVPNConfigs() {
     try {
       const configs = await ipcRenderer.invoke('get-vpn-configs');
       this.vpnConfigs = configs;
-      
+
       console.log('VPN Konfigurationen geladen:', configs);
-      
+
       if (this.vpnConfigs.length > 0 && !this.selectedVPNConfig) {
         this.selectedVPNConfig = this.vpnConfigs[0].path;
         this.updateVPNStatus('disconnected');
@@ -278,14 +278,14 @@ async checkVPNStatus() {
     }
   }
 
-showVPNConfigModal() {
-  console.log('Zeige VPN Config Modal');
+  showVPNConfigModal() {
+    console.log('Zeige VPN Config Modal');
 
-  const modal = document.createElement('div');
-  modal.className = 'modal vpn-config-modal';
-  modal.id = 'vpn-config-modal';
-  
-  modal.innerHTML = `
+    const modal = document.createElement('div');
+    modal.className = 'modal vpn-config-modal';
+    modal.id = 'vpn-config-modal';
+
+    modal.innerHTML = `
     <div class="modal-content">
       <div class="modal-header">
         <h2>VPN Konfiguration</h2>
@@ -294,9 +294,9 @@ showVPNConfigModal() {
       <div class="modal-body">
         <h3>Verfügbare Konfigurationen:</h3>
         <div id="config-list">
-          ${this.vpnConfigs.length === 0 ? 
-            '<p>Keine VPN-Konfigurationen gefunden.</p>' : 
-            this.vpnConfigs.map(config => `
+          ${this.vpnConfigs.length === 0 ?
+        '<p>Keine VPN-Konfigurationen gefunden.</p>' :
+        this.vpnConfigs.map(config => `
               <div class="config-file-item">
                 <span class="config-file-name">${config.name}</span>
                 <div class="config-file-actions">
@@ -306,7 +306,7 @@ showVPNConfigModal() {
                 </div>
               </div>
             `).join('')
-          }
+      }
         </div>
         <div class="form-actions">
           <button class="secondary-button" id="add-config-btn">
@@ -316,76 +316,76 @@ showVPNConfigModal() {
       </div>
     </div>
   `;
-  
-  document.body.appendChild(modal);
-  
-  // Modal schließen
-  modal.querySelector('.close-modal').addEventListener('click', () => {
-    modal.remove();
-  });
-  
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
-      modal.remove();
-    }
-  });
-  
-  // Konfiguration auswählen
-  modal.querySelectorAll('.select-config-btn').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const configPath = btn.dataset.path;
-      this.selectedVPNConfig = configPath;
-      this.updateVPNStatus('disconnected');
-      this.showNotification('VPN-Konfiguration ausgewählt', 'success');
+
+    document.body.appendChild(modal);
+
+    // Modal schließen
+    modal.querySelector('.close-modal').addEventListener('click', () => {
       modal.remove();
     });
-  });
-  
-  // Neue Konfiguration hinzufügen
-  const addConfigBtn = modal.querySelector('#add-config-btn');
-  if (addConfigBtn) {
-    addConfigBtn.addEventListener('click', async () => {
-      try {
-        const result = await ipcRenderer.invoke('select-vpn-config');
-        if (result.success) {
-          this.loadVPNConfigs();
-          this.showNotification('VPN-Konfiguration hinzugefügt', 'success');
-          modal.remove();
-        }
-      } catch (error) {
-        console.error('Fehler beim Hinzufügen der VPN-Konfiguration:', error);
-        this.showNotification('Fehler beim Hinzufügen der Konfiguration', 'error');
+
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
       }
     });
+
+    // Konfiguration auswählen
+    modal.querySelectorAll('.select-config-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const configPath = btn.dataset.path;
+        this.selectedVPNConfig = configPath;
+        this.updateVPNStatus('disconnected');
+        this.showNotification('VPN-Konfiguration ausgewählt', 'success');
+        modal.remove();
+      });
+    });
+
+    // Neue Konfiguration hinzufügen
+    const addConfigBtn = modal.querySelector('#add-config-btn');
+    if (addConfigBtn) {
+      addConfigBtn.addEventListener('click', async () => {
+        try {
+          const result = await ipcRenderer.invoke('select-vpn-config');
+          if (result.success) {
+            this.loadVPNConfigs();
+            this.showNotification('VPN-Konfiguration hinzugefügt', 'success');
+            modal.remove();
+          }
+        } catch (error) {
+          console.error('Fehler beim Hinzufügen der VPN-Konfiguration:', error);
+          this.showNotification('Fehler beim Hinzufügen der Konfiguration', 'error');
+        }
+      });
+    }
   }
-}
-  
+
   // Seite wechseln
   changePage(pageName) {
     this.currentPage = pageName;
-    
+
     // UI aktualisieren
     document.querySelectorAll('.page').forEach(page => {
       page.classList.remove('active');
     });
     document.getElementById(pageName).classList.add('active');
-    
+
     document.querySelectorAll('.nav-button').forEach(btn => {
       btn.classList.remove('active');
     });
     document.querySelector(`.nav-button[data-page="${pageName}"]`).classList.add('active');
-    
+
     // Inhalte aktualisieren basierend auf der Seite
     if (pageName === 'library') {
       this.loadGames();
     }
   }
-  
+
   // Ansicht zwischen Grid und Liste umschalten
   toggleView() {
     const container = document.querySelector('.game-grid');
     const viewToggleBtn = document.getElementById('view-toggle');
-    
+
     if (this.currentView === 'grid') {
       this.currentView = 'list';
       container.classList.remove('game-grid');
@@ -399,21 +399,29 @@ showVPNConfigModal() {
       viewToggleBtn.innerHTML = '<i class="fas fa-list"></i>';
       viewToggleBtn.title = "Listen-Ansicht";
     }
-    
+
     this.renderGames(this.games);
   }
-  
+
   // Spiele von IPC laden
   async loadGames() {
     try {
       this.games = await ipcRenderer.invoke('scan-games');
-      
+
+      // NEUES DEBUG LOG
+      console.log('=== GAMES LOADED ===');
+      console.log('Number of games loaded:', this.games.length);
+      if (this.games.length > 0) {
+        console.log('First game productFormat:', this.games[0].productFormat);
+        console.log('First game object:', this.games[0]);
+      }
+      console.log('=== END GAMES LOADED ===');
       // Genres für Filter extrahieren
       this.updateGenreFilter();
-      
+
       // Quellen für Filter extrahieren
       this.updateSourceFilter();
-      
+
       // Spiele rendern
       this.applyFilters();
     } catch (error) {
@@ -421,37 +429,44 @@ showVPNConfigModal() {
       this.showNotification('Fehler beim Laden der Spiele', 'error');
     }
   }
-// Enhanced showGameDetails function with fixed CSS structure
-showGameDetails(gameInfo) {
-  console.log('Showing game details for:', gameInfo.title);
-  console.log('Game info object:', gameInfo);
-  
-  // Remove existing detail view if present
-  const existingDetails = document.getElementById('game-details-panel');
-  if (existingDetails) {
-    existingDetails.remove();
-  }
-  
-  // Remove existing overlay
-  const existingOverlay = document.querySelector('.details-overlay');
-  if (existingOverlay) {
-    existingOverlay.remove();
-  }
+  // Enhanced showGameDetails function with fixed CSS structure
+  showGameDetails(gameInfo) {
+    console.log('=== DEBUGGING GAME INFO ===');
+    console.log('Complete gameInfo object:', gameInfo);
+    console.log('gameInfo.productFormat:', gameInfo.productFormat);
+    console.log('gameInfo.product_format:', gameInfo.product_format);
+    console.log('gameInfo.dlsiteProductFormat:', gameInfo.dlsiteProductFormat);
+    console.log('All keys in gameInfo:', Object.keys(gameInfo));
+    console.log('=== END DEBUG ===');
+    console.log('Showing game details for:', gameInfo.title);
+    console.log('Game info object:', gameInfo);
 
-  // Create overlay for mobile/background click
-  const overlay = document.createElement('div');
-  overlay.className = 'details-overlay';
-  document.body.appendChild(overlay);
+    // Remove existing detail view if present
+    const existingDetails = document.getElementById('game-details-panel');
+    if (existingDetails) {
+      existingDetails.remove();
+    }
 
-  // Create detail panel
-  const detailsPanel = document.createElement('div');
-  detailsPanel.id = 'game-details-panel';
-  detailsPanel.className = 'game-details-panel';
-  
-  // Format tags as HTML
-  let tagsHtml = '';
-  if (gameInfo.dlsiteTags && gameInfo.dlsiteTags.length > 0) {
-    tagsHtml = `
+    // Remove existing overlay
+    const existingOverlay = document.querySelector('.details-overlay');
+    if (existingOverlay) {
+      existingOverlay.remove();
+    }
+
+    // Create overlay for mobile/background click
+    const overlay = document.createElement('div');
+    overlay.className = 'details-overlay';
+    document.body.appendChild(overlay);
+
+    // Create detail panel
+    const detailsPanel = document.createElement('div');
+    detailsPanel.id = 'game-details-panel';
+    detailsPanel.className = 'game-details-panel';
+
+    // Format tags as HTML
+    let tagsHtml = '';
+    if (gameInfo.dlsiteTags && gameInfo.dlsiteTags.length > 0) {
+      tagsHtml = `
       <div class="detail-group">
         <h4>Tags</h4>
         <div class="tag-list">
@@ -459,9 +474,9 @@ showGameDetails(gameInfo) {
         </div>
       </div>
     `;
-  } else if (gameInfo.tags && gameInfo.tags.length > 0) {
-    // Fallback to general tags if dlsiteTags not available
-    tagsHtml = `
+    } else if (gameInfo.tags && gameInfo.tags.length > 0) {
+      // Fallback to general tags if dlsiteTags not available
+      tagsHtml = `
       <div class="detail-group">
         <h4>Tags</h4>
         <div class="tag-list">
@@ -469,103 +484,103 @@ showGameDetails(gameInfo) {
         </div>
       </div>
     `;
-  }
-  
-  // Format Voice Actors as HTML
-  let voiceActorsHtml = '';
-  if (gameInfo.dlsiteVoiceActors && gameInfo.dlsiteVoiceActors.length > 0) {
-    const voiceActorsText = Array.isArray(gameInfo.dlsiteVoiceActors) 
-      ? gameInfo.dlsiteVoiceActors.join(', ') 
-      : gameInfo.dlsiteVoiceActors;
-    voiceActorsHtml = `
+    }
+
+    // Format Voice Actors as HTML
+    let voiceActorsHtml = '';
+    if (gameInfo.dlsiteVoiceActors && gameInfo.dlsiteVoiceActors.length > 0) {
+      const voiceActorsText = Array.isArray(gameInfo.dlsiteVoiceActors)
+        ? gameInfo.dlsiteVoiceActors.join(', ')
+        : gameInfo.dlsiteVoiceActors;
+      voiceActorsHtml = `
       <div class="detail-group">
         <h4>Voice Actors</h4>
         <p>${voiceActorsText}</p>
       </div>
     `;
-  }
-  
-  // Format Product Format as HTML
-  let productFormatHtml = '';
-  if (gameInfo.dlsiteProductFormat && gameInfo.dlsiteProductFormat.length > 0) {
-    const productFormatText = Array.isArray(gameInfo.dlsiteProductFormat) 
-      ? gameInfo.dlsiteProductFormat.join(', ') 
-      : gameInfo.dlsiteProductFormat;
-    productFormatHtml = `
+    }
+
+    // Format Product Format as HTML
+    let productFormatHtml = '';
+    if (gameInfo.dlsiteProductFormat && gameInfo.dlsiteProductFormat.length > 0) {
+      const productFormatText = Array.isArray(gameInfo.dlsiteProductFormat)
+        ? gameInfo.dlsiteProductFormat.join(', ')
+        : gameInfo.dlsiteProductFormat;
+      productFormatHtml = `
       <div class="detail-group">
         <h4>Product Format</h4>
         <p>${productFormatText}</p>
       </div>
     `;
-  }
-  
-  // Format Authors as HTML
-  let authorsHtml = '';
-  if (gameInfo.authors && gameInfo.authors.length > 0) {
-    authorsHtml = `
+    }
+
+    // Format Authors as HTML
+    let authorsHtml = '';
+    if (gameInfo.authors && gameInfo.authors.length > 0) {
+      authorsHtml = `
       <div class="detail-group">
         <h4>Authors</h4>
         <p>${gameInfo.authors.join(', ')}</p>
       </div>
     `;
-  }
-  
-  // Format Illustrators as HTML
-  let illustratorsHtml = '';
-  if (gameInfo.illustrators && gameInfo.illustrators.length > 0) {
-    illustratorsHtml = `
+    }
+
+    // Format Illustrators as HTML
+    let illustratorsHtml = '';
+    if (gameInfo.illustrators && gameInfo.illustrators.length > 0) {
+      illustratorsHtml = `
       <div class="detail-group">
         <h4>Illustrations</h4>
         <p>${gameInfo.illustrators.join(', ')}</p>
       </div>
     `;
-  }
-  
-  // Format Scenario writers as HTML
-  let scenarioHtml = '';
-  if (gameInfo.scenario && gameInfo.scenario.length > 0) {
-    scenarioHtml = `
+    }
+
+    // Format Scenario writers as HTML
+    let scenarioHtml = '';
+    if (gameInfo.scenario && gameInfo.scenario.length > 0) {
+      scenarioHtml = `
       <div class="detail-group">
         <h4>Scenario</h4>
         <p>${gameInfo.scenario.join(', ')}</p>
       </div>
     `;
-  }
-  
-  // Format DLSite Circle information
-  let circleHtml = '';
-  if (gameInfo.dlsiteCircle && gameInfo.dlsiteCircle !== gameInfo.developer) {
-    circleHtml = `
+    }
+
+    // Format DLSite Circle information
+    let circleHtml = '';
+    if (gameInfo.dlsiteCircle && gameInfo.dlsiteCircle !== gameInfo.developer) {
+      circleHtml = `
       <div class="detail-group">
         <h4>Circle</h4>
         <p>${gameInfo.dlsiteCircle}</p>
       </div>
     `;
-  }
-  
-  // Format DLSite specific information
-  let dlsiteSpecificHtml = '';
-  if (gameInfo.source === 'DLSite') {
-    const dlsiteFields = [];
-    
-    if (gameInfo.dlsiteId) {
-      dlsiteFields.push(`<strong>DLSite ID:</strong> ${gameInfo.dlsiteId}`);
     }
-    
-    if (gameInfo.dlsiteFileSize) {
-      dlsiteFields.push(`<strong>File Size:</strong> ${gameInfo.dlsiteFileSize}`);
-    }
-    
-    if (gameInfo.dlsiteReleaseDate) {
-      dlsiteFields.push(`<strong>Release Date:</strong> ${gameInfo.dlsiteReleaseDate}`);
-    }
-    
-    if (gameInfo.dlsiteUpdateDate) {
-      dlsiteFields.push(`<strong>Update Date:</strong> ${gameInfo.dlsiteUpdateDate}`);
-    }
-    
-    if (dlsiteFields.length > 0) {
-      dlsiteSpecificHtml = `
+
+    // Format DLSite specific information
+    let dlsiteSpecificHtml = '';
+    if (gameInfo.source === 'DLSite') {
+      const dlsiteFields = [];
+
+      if (gameInfo.dlsiteId) {
+        dlsiteFields.push(`<strong>DLSite ID:</strong> ${gameInfo.dlsiteId}`);
+      }
+
+      if (gameInfo.dlsiteFileSize) {
+        dlsiteFields.push(`<strong>File Size:</strong> ${gameInfo.dlsiteFileSize}`);
+      }
+
+      if (gameInfo.dlsiteReleaseDate) {
+        dlsiteFields.push(`<strong>Release Date:</strong> ${gameInfo.dlsiteReleaseDate}`);
+      }
+
+      if (gameInfo.dlsiteUpdateDate) {
+        dlsiteFields.push(`<strong>Update Date:</strong> ${gameInfo.dlsiteUpdateDate}`);
+      }
+
+      if (dlsiteFields.length > 0) {
+        dlsiteSpecificHtml = `
         <div class="detail-group">
           <h4>DLSite Information</h4>
           <div class="dlsite-info">
@@ -573,17 +588,17 @@ showGameDetails(gameInfo) {
           </div>
         </div>
       `;
+      }
     }
-  }
-  
-  // Use placeholder image if no cover available
-  const coverImage = gameInfo.coverImage && gameInfo.coverImage.trim() !== '' 
-    ? gameInfo.coverImage 
-    : 'assets/placeholder.png';
-  
-  console.log(`Using cover image: ${coverImage}`);
-  
-  detailsPanel.innerHTML = `
+
+    // Use placeholder image if no cover available
+    const coverImage = gameInfo.coverImage && gameInfo.coverImage.trim() !== ''
+      ? gameInfo.coverImage
+      : 'assets/placeholder.png';
+
+    console.log(`Using cover image: ${coverImage}`);
+
+    detailsPanel.innerHTML = `
     <div class="details-header">
       <h2>${gameInfo.title}</h2>
       <button class="toggle-details-btn" title="Hide Details">
@@ -604,39 +619,26 @@ showGameDetails(gameInfo) {
             <h4>Publisher</h4>
             <p>${gameInfo.publisher || 'Unknown'}</p>
           </div>
-          ${productFormatHtml}
           <div class="detail-group">
-            <h4>Genre</h4>
-            <p>${gameInfo.genre || 'Unknown'}</p>
+            <h4>Product Format</h4>
+            <p>${gameInfo.productFormat || 'Unknown'}</p>
           </div>
           <div class="detail-group">
             <h4>Language</h4>
             <p>${gameInfo.language || 'Unknown'}</p>
           </div>
-          ${gameInfo.dlsiteAgeRating ? `
           <div class="detail-group">
             <h4>Age Rating</h4>
-            <p>${gameInfo.dlsiteAgeRating}</p>
+            <p>${gameInfo.ageRating || 'Unknown'}</p>
           </div>
-          ` : ''}
-          ${gameInfo.dlsiteFileSize ? `
-          <div class="detail-group">
-            <h4>File Size</h4>
-            <p>${gameInfo.dlsiteFileSize}</p>
-          </div>
-          ` : ''}
-          ${gameInfo.dlsiteReleaseDate ? `
           <div class="detail-group">
             <h4>Release Date</h4>
-            <p>${gameInfo.dlsiteReleaseDate}</p>
+            <p>${gameInfo.releaseDate || 'Unknown'}</p>
           </div>
-          ` : ''}
-          ${gameInfo.dlsiteUpdateDate ? `
           <div class="detail-group">
-            <h4>Update Date</h4>
-            <p>${gameInfo.dlsiteUpdateDate}</p>
+            <h4>Last Update</h4>
+            <p>${gameInfo.updateDate || 'Unknown'}</p>
           </div>
-          ` : ''}
           ${circleHtml}
         </div>
       </div>
@@ -676,95 +678,95 @@ showGameDetails(gameInfo) {
       </div>
     </div>
   `;
-  
-  document.body.appendChild(detailsPanel);
-  
-  // Show panel with animation
-  setTimeout(() => {
-    detailsPanel.classList.add('visible');
-    overlay.classList.add('visible');
-    document.body.classList.add('details-open');
-  }, 10);
-  
-  // Event listener for closing detail view
-  const closePanel = () => {
-    console.log('Closing game details panel');
-    detailsPanel.classList.remove('visible');
-    overlay.classList.remove('visible');
-    document.body.classList.remove('details-open');
-    
+
+    document.body.appendChild(detailsPanel);
+
+    // Show panel with animation
     setTimeout(() => {
-      detailsPanel.remove();
-      overlay.remove();
-    }, 300);
-  };
-  
-  detailsPanel.querySelector('.toggle-details-btn').addEventListener('click', closePanel);
-  
-  // Close when clicking overlay
-  overlay.addEventListener('click', closePanel);
-  
-  // Close with Escape key
-  const handleEscape = (e) => {
-    if (e.key === 'Escape') {
-      closePanel();
-      document.removeEventListener('keydown', handleEscape);
-    }
-  };
-  document.addEventListener('keydown', handleEscape);
-  
-  // Event listener for "Play" button
-  const playBtn = detailsPanel.querySelector('.play-game-btn');
-  if (playBtn) {
-    playBtn.addEventListener('click', () => {
-      console.log('Play button clicked for:', gameInfo.title);
-      this.launchGame(gameInfo.directory);
-    });
-  }
-  
-  // Event listener for "Edit" button
-  const editBtn = detailsPanel.querySelector('.edit-game-btn');
-  if (editBtn) {
-    editBtn.addEventListener('click', () => {
-      console.log('Edit button clicked for:', gameInfo.title);
-      this.showEditGameModal(gameInfo);
-    });
-  }
-  
-  // Event listener for "Open Folder" button
-  const openFolderBtn = detailsPanel.querySelector('.open-folder-btn');
-  if (openFolderBtn) {
-    openFolderBtn.addEventListener('click', () => {
-      console.log('Open folder button clicked for:', gameInfo.title);
-      const folderPath = openFolderBtn.dataset.path;
-      if (folderPath) {
-        const { shell } = require('electron');
-        shell.openPath(folderPath);
+      detailsPanel.classList.add('visible');
+      overlay.classList.add('visible');
+      document.body.classList.add('details-open');
+    }, 10);
+
+    // Event listener for closing detail view
+    const closePanel = () => {
+      console.log('Closing game details panel');
+      detailsPanel.classList.remove('visible');
+      overlay.classList.remove('visible');
+      document.body.classList.remove('details-open');
+
+      setTimeout(() => {
+        detailsPanel.remove();
+        overlay.remove();
+      }, 300);
+    };
+
+    detailsPanel.querySelector('.toggle-details-btn').addEventListener('click', closePanel);
+
+    // Close when clicking overlay
+    overlay.addEventListener('click', closePanel);
+
+    // Close with Escape key
+    const handleEscape = (e) => {
+      if (e.key === 'Escape') {
+        closePanel();
+        document.removeEventListener('keydown', handleEscape);
       }
+    };
+    document.addEventListener('keydown', handleEscape);
+
+    // Event listener for "Play" button
+    const playBtn = detailsPanel.querySelector('.play-game-btn');
+    if (playBtn) {
+      playBtn.addEventListener('click', () => {
+        console.log('Play button clicked for:', gameInfo.title);
+        this.launchGame(gameInfo.directory);
+      });
+    }
+
+    // Event listener for "Edit" button
+    const editBtn = detailsPanel.querySelector('.edit-game-btn');
+    if (editBtn) {
+      editBtn.addEventListener('click', () => {
+        console.log('Edit button clicked for:', gameInfo.title);
+        this.showEditGameModal(gameInfo);
+      });
+    }
+
+    // Event listener for "Open Folder" button
+    const openFolderBtn = detailsPanel.querySelector('.open-folder-btn');
+    if (openFolderBtn) {
+      openFolderBtn.addEventListener('click', () => {
+        console.log('Open folder button clicked for:', gameInfo.title);
+        const folderPath = openFolderBtn.dataset.path;
+        if (folderPath) {
+          const { shell } = require('electron');
+          shell.openPath(folderPath);
+        }
+      });
+    }
+
+    // Event listener for store links
+    const storeLinks = detailsPanel.querySelectorAll('.store-link');
+    storeLinks.forEach(link => {
+      link.addEventListener('click', (e) => {
+        e.preventDefault();
+        console.log('Opening store link:', link.href);
+        const { shell } = require('electron');
+        shell.openExternal(link.href);
+      });
     });
+
+    console.log('Game details panel created and event listeners attached');
   }
-  
-  // Event listener for store links
-  const storeLinks = detailsPanel.querySelectorAll('.store-link');
-  storeLinks.forEach(link => {
-    link.addEventListener('click', (e) => {
-      e.preventDefault();
-      console.log('Opening store link:', link.href);
-      const { shell } = require('electron');
-      shell.openExternal(link.href);
-    });
-  });
-  
-  console.log('Game details panel created and event listeners attached');
-}
   // Genre-Filter aktualisieren
   updateGenreFilter() {
     const genreFilter = document.getElementById('genre-filter');
     if (!genreFilter) return;
-    
+
     // Aktuelle Auswahl speichern
     const currentSelection = genreFilter.value;
-    
+
     // Alle Genres extrahieren
     const genres = new Set(['all']);
     this.games.forEach(game => {
@@ -772,29 +774,29 @@ showGameDetails(gameInfo) {
         genres.add(game.genre);
       }
     });
-    
+
     // Filter-Optionen aktualisieren
     genreFilter.innerHTML = '';
-    
+
     genres.forEach(genre => {
       const option = document.createElement('option');
       option.value = genre;
       option.textContent = genre === 'all' ? 'Alle Genres' : genre;
       genreFilter.appendChild(option);
     });
-    
+
     // Vorherige Auswahl wiederherstellen
     genreFilter.value = currentSelection;
   }
-  
+
   // Quellen-Filter aktualisieren
   updateSourceFilter() {
     const sourceFilter = document.getElementById('source-filter');
     if (!sourceFilter) return;
-    
+
     // Aktuelle Auswahl speichern
     const currentSelection = sourceFilter.value;
-    
+
     // Alle Quellen extrahieren
     const sources = new Set(['all']);
     this.games.forEach(game => {
@@ -802,58 +804,58 @@ showGameDetails(gameInfo) {
         sources.add(game.source);
       }
     });
-    
+
     // Filter-Optionen aktualisieren
     sourceFilter.innerHTML = '';
-    
+
     sources.forEach(source => {
       const option = document.createElement('option');
       option.value = source;
       option.textContent = source === 'all' ? 'Alle Quellen' : source;
       sourceFilter.appendChild(option);
     });
-    
+
     // Vorherige Auswahl wiederherstellen
     sourceFilter.value = currentSelection;
   }
-  
+
   // Filter anwenden
   applyFilters() {
     let filteredGames = [...this.games];
-    
+
     // Textsuche
     if (this.filters.search) {
-      filteredGames = filteredGames.filter(game => 
+      filteredGames = filteredGames.filter(game =>
         game.title.toLowerCase().includes(this.filters.search) ||
         (game.developer && game.developer.toLowerCase().includes(this.filters.search)) ||
         (game.description && game.description.toLowerCase().includes(this.filters.search))
       );
     }
-    
+
     // Genre-Filter
     if (this.filters.genre && this.filters.genre !== 'all') {
-      filteredGames = filteredGames.filter(game => 
+      filteredGames = filteredGames.filter(game =>
         game.genre === this.filters.genre
       );
     }
-    
+
     // Quellen-Filter
     if (this.filters.source && this.filters.source !== 'all') {
-      filteredGames = filteredGames.filter(game => 
+      filteredGames = filteredGames.filter(game =>
         game.source === this.filters.source
       );
     }
-    
+
     this.renderGames(filteredGames);
   }
-  
+
   // Spiele rendern
   renderGames(gamesToRender) {
     const container = document.querySelector(this.currentView === 'grid' ? '.game-grid' : '.game-list');
     if (!container) return;
-    
+
     container.innerHTML = '';
-    
+
     if (gamesToRender.length === 0) {
       container.innerHTML = `
         <div class="empty-library">
@@ -864,65 +866,65 @@ showGameDetails(gameInfo) {
           </button>
         </div>
       `;
-      
+
       const emptyAddBtn = document.getElementById('empty-add-game');
       if (emptyAddBtn) {
         emptyAddBtn.addEventListener('click', () => this.showAddGameModal());
       }
       return;
     }
-    
+
     // Sortieren nach Titel
     gamesToRender.sort((a, b) => a.title.localeCompare(b.title));
-    
+
     gamesToRender.forEach(game => {
       const gameElement = this.createGameElement(game);
       container.appendChild(gameElement);
     });
   }
-  
+
   // Ein Spielelement erstellen
   createGameElement(game) {
     const element = document.createElement('div');
     element.className = this.currentView === 'grid' ? 'game-card' : 'game-card list-view';
     element.dataset.directory = game.directory;
-    
+
     // Formatierung für das zuletzt gespielte Datum
-  let lastPlayedText = 'Noch nie gespielt';
-  if (game.lastPlayed) {
-    const lastPlayed = new Date(game.lastPlayed);
-    const now = new Date();
-    const diffDays = Math.floor((now - lastPlayed) / (1000 * 60 * 60 * 24));
-    
-    if (diffDays === 0) {
-      lastPlayedText = 'Heute gespielt';
-    } else if (diffDays === 1) {
-      lastPlayedText = 'Gestern gespielt';
-    } else {
-      lastPlayedText = `Vor ${diffDays} Tagen gespielt`;
+    let lastPlayedText = 'Noch nie gespielt';
+    if (game.lastPlayed) {
+      const lastPlayed = new Date(game.lastPlayed);
+      const now = new Date();
+      const diffDays = Math.floor((now - lastPlayed) / (1000 * 60 * 60 * 24));
+
+      if (diffDays === 0) {
+        lastPlayedText = 'Heute gespielt';
+      } else if (diffDays === 1) {
+        lastPlayedText = 'Gestern gespielt';
+      } else {
+        lastPlayedText = `Vor ${diffDays} Tagen gespielt`;
+      }
     }
-  }
-  
-  // Spielzeit formatieren
-  let playTimeText = 'Keine Spielzeit';
-  if (game.playTime && game.playTime > 0) {
-    if (game.playTime < 60) {
-      playTimeText = `${game.playTime} Minuten`;
-    } else {
-      const hours = Math.floor(game.playTime / 60);
-      const minutes = game.playTime % 60;
-      playTimeText = `${hours} Std. ${minutes} Min.`;
+
+    // Spielzeit formatieren
+    let playTimeText = 'Keine Spielzeit';
+    if (game.playTime && game.playTime > 0) {
+      if (game.playTime < 60) {
+        playTimeText = `${game.playTime} Minuten`;
+      } else {
+        const hours = Math.floor(game.playTime / 60);
+        const minutes = game.playTime % 60;
+        playTimeText = `${hours} Std. ${minutes} Min.`;
+      }
     }
-  }
-  
-  // Platzhalterbild verwenden, wenn kein Cover vorhanden ist
-  const coverImage = game.coverImage && game.coverImage.trim() !== '' 
-    ? game.coverImage 
-    : 'assets/placeholder.png';
+
+    // Platzhalterbild verwenden, wenn kein Cover vorhanden ist
+    const coverImage = game.coverImage && game.coverImage.trim() !== ''
+      ? game.coverImage
+      : 'assets/placeholder.png';
 
     console.log(`Spiel ${game.title}, Cover-Pfad: ${coverImage}`);
-  
-  element.innerHTML = `
+
+    element.innerHTML = `
     <div class="game-image" style="background-image: url('${coverImage}')">
       <div class="game-actions">
         <button class="play-btn" title="Spielen" data-directory="${game.directory}">
@@ -949,38 +951,40 @@ showGameDetails(gameInfo) {
       </div>
     </div>
   `;
-  
-  // Event-Listener für den Play-Button
-  const playBtn = element.querySelector('.play-btn');
-  if (playBtn) {
-    playBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
-      this.launchGame(game.directory);
-    });
-  }
-  
-  // Event-Listener für den Info-Button
-  const infoBtn = element.querySelector('.info-btn');
-  if (infoBtn) {
-    infoBtn.addEventListener('click', (e) => {
-      e.stopPropagation();
+
+    // Event-Listener für den Play-Button
+    const playBtn = element.querySelector('.play-btn');
+    if (playBtn) {
+      playBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        this.launchGame(game.directory);
+      });
+    }
+
+    // Event-Listener für den Info-Button
+    const infoBtn = element.querySelector('.info-btn');
+    if (infoBtn) {
+      infoBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        console.log('*** INFO BUTTON CLICKED ***');
+        this.showGameDetails(game);
+      });
+    }
+
+    // Event-Listener für Klick auf das Spiel
+    element.addEventListener('click', () => {
+      console.log('*** GAME ELEMENT CLICKED ***'); // Dieses Log hinzufügen
       this.showGameDetails(game);
     });
+
+    return element;
   }
-  
-  // Event-Listener für Klick auf das Spiel
-  element.addEventListener('click', () => {
-    this.showGameDetails(game);
-  });
-  
-  return element;
-}
-  
+
   // Spiel starten
   async launchGame(directory) {
     try {
       const result = await ipcRenderer.invoke('launch-game', directory);
-      
+
       if (result.success) {
         this.showNotification(result.message, 'success');
       } else {
@@ -991,46 +995,46 @@ showGameDetails(gameInfo) {
       this.showNotification('Fehler beim Starten des Spiels', 'error');
     }
   }
-  
+
   // Kontextmenü für ein Spiel anzeigen
   showGameContextMenu(gameCard, x, y) {
     const directory = gameCard.dataset.directory;
     const gameInfo = this.games.find(game => game.directory === directory);
-    
+
     if (!gameInfo) return;
-    
+
     // Altes Kontextmenü entfernen, falls vorhanden
     const oldMenu = document.getElementById('context-menu');
     if (oldMenu) {
       oldMenu.remove();
     }
-    
+
     // Neues Kontextmenü erstellen
     const menu = document.createElement('div');
     menu.id = 'context-menu';
     menu.style.left = `${x}px`;
     menu.style.top = `${y}px`;
-    
+
     menu.innerHTML = `
       <div class="menu-item" id="ctx-play"><i class="fas fa-play"></i> Spielen</div>
       <div class="menu-item" id="ctx-edit"><i class="fas fa-edit"></i> Bearbeiten</div>
       <div class="menu-item" id="ctx-folder"><i class="fas fa-folder-open"></i> Ordner öffnen</div>
       <div class="menu-item danger" id="ctx-delete"><i class="fas fa-trash"></i> Entfernen</div>
     `;
-    
+
     document.body.appendChild(menu);
-    
+
     // Event-Listener für Menüaktionen
     document.getElementById('ctx-play').addEventListener('click', () => {
       this.launchGame(directory);
       menu.remove();
     });
-    
+
     document.getElementById('ctx-edit').addEventListener('click', () => {
       this.showEditGameModal(gameInfo);
       menu.remove();
     });
-    
+
     document.getElementById('ctx-folder').addEventListener('click', () => {
       // Ordner im Datei-Explorer öffnen
       if (gameInfo.executablePath) {
@@ -1041,20 +1045,20 @@ showGameDetails(gameInfo) {
       }
       menu.remove();
     });
-    
+
     document.getElementById('ctx-delete').addEventListener('click', () => {
       this.confirmDeleteGame(directory, gameInfo.title);
       menu.remove();
     });
   }
-  
-// "Spiel hinzufügen" Modal anzeigen
-showAddGameModal() {
-  const modal = document.createElement('div');
-  modal.className = 'modal';
-  modal.id = 'add-game-modal';
-  
-  modal.innerHTML = `
+
+  // "Spiel hinzufügen" Modal anzeigen
+  showAddGameModal() {
+    const modal = document.createElement('div');
+    modal.className = 'modal';
+    modal.id = 'add-game-modal';
+
+    modal.innerHTML = `
     <div class="modal-content">
       <div class="modal-header">
         <h2>Spiel hinzufügen</h2>
@@ -1189,404 +1193,404 @@ showAddGameModal() {
 </div>
 
   `;
-  
-  document.body.appendChild(modal);
-  
-  // Modal-Interaktionen
-  modal.querySelector('.close-modal').addEventListener('click', () => {
-    modal.remove();
-  });
-  
-  // Klick außerhalb des Modals schließt es
-  modal.addEventListener('click', (e) => {
-    if (e.target === modal) {
+
+    document.body.appendChild(modal);
+
+    // Modal-Interaktionen
+    modal.querySelector('.close-modal').addEventListener('click', () => {
       modal.remove();
-    }
-  });
-  
-  // Plattformauswahl
-  const platformCards = modal.querySelectorAll('.platform-card');
-  platformCards.forEach(card => {
-    card.addEventListener('click', () => {
-      const platform = card.dataset.platform;
-      this.selectedPlatform = platform;
-      
-      // Nächsten Schritt anzeigen
-      document.getElementById('step-platform').style.display = 'none';
-      document.getElementById('step-import-type').style.display = 'block';
     });
-  });
-  
-  // Import-Typ-Auswahl
-  const importTypeButtons = modal.querySelectorAll('.import-type-btn');
-  importTypeButtons.forEach(button => {
-    button.addEventListener('click', () => {
-      const importType = button.dataset.type;
-      this.selectedImportType = importType;
-      
-      // Zurück zum vorherigen Schritt
-      document.getElementById('step-import-type').style.display = 'none';
-      
-      // Bei allen Plattformen direkt zum Ordner-Auswahl gehen
-      document.getElementById('step-select-folder').style.display = 'block';
-      
-      // Unterschiedliche Hilfetexte je nach Plattform
-      switch (this.selectedPlatform) {
-        case 'steam':
-          document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single' 
-            ? 'Wähle den Ordner, der das Steam-Spiel enthält.' 
-            : 'Wähle den Steam-Bibliotheksordner (z.B. steamapps/common).';
-          break;
-        case 'dlsite':
-          document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single' 
-            ? 'Wähle den Ordner, der das DLSite-Spiel enthält. Die RJ/RE-Nummer wird automatisch erkannt.' 
-            : 'Wähle den Ordner, der deine DLSite-Spiele enthält.';
-          break;
-        case 'itchio':
-          document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single' 
-            ? 'Wähle den Ordner, der das Itch.io-Spiel enthält.' 
-            : 'Wähle den Ordner, der deine Itch.io-Spiele enthält.';
-          break;
-        default:
-          document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single' 
-            ? 'Wähle den Ordner, der das Spiel enthält.' 
-            : 'Wähle den Ordner, der mehrere Spiele enthält.';
-          break;
+
+    // Klick außerhalb des Modals schließt es
+    modal.addEventListener('click', (e) => {
+      if (e.target === modal) {
+        modal.remove();
       }
     });
-  });
-  
-  // Steam-ID bestätigen
-  const confirmSteamIdBtn = modal.querySelector('.confirm-steam-id');
-  if (confirmSteamIdBtn) {
-    confirmSteamIdBtn.addEventListener('click', async () => {
-      const steamAppId = document.getElementById('steam-app-id').value.trim();
-      if (!steamAppId) {
-        this.showNotification('Bitte gib eine Steam App-ID ein', 'error');
-        return;
-      }
-      
-      try {
-        // Spieldetails von Steam abrufen
-        const gameDetails = await this.fetchSteamGameDetails(steamAppId);
-        
-        // Zum Ordner-Auswahl-Schritt
-        document.getElementById('step-steam-id').style.display = 'none';
+
+    // Plattformauswahl
+    const platformCards = modal.querySelectorAll('.platform-card');
+    platformCards.forEach(card => {
+      card.addEventListener('click', () => {
+        const platform = card.dataset.platform;
+        this.selectedPlatform = platform;
+
+        // Nächsten Schritt anzeigen
+        document.getElementById('step-platform').style.display = 'none';
+        document.getElementById('step-import-type').style.display = 'block';
+      });
+    });
+
+    // Import-Typ-Auswahl
+    const importTypeButtons = modal.querySelectorAll('.import-type-btn');
+    importTypeButtons.forEach(button => {
+      button.addEventListener('click', () => {
+        const importType = button.dataset.type;
+        this.selectedImportType = importType;
+
+        // Zurück zum vorherigen Schritt
+        document.getElementById('step-import-type').style.display = 'none';
+
+        // Bei allen Plattformen direkt zum Ordner-Auswahl gehen
         document.getElementById('step-select-folder').style.display = 'block';
-        document.getElementById('folder-help-text').textContent = 'Wähle den Ordner, der das Steam-Spiel enthält.';
-        
-        // Spieldetails speichern für später
-        this.pendingGameDetails = {
-          ...gameDetails,
-          source: 'Steam',
-          steamAppId: steamAppId
-        };
-      } catch (error) {
-        this.showNotification('Fehler beim Abrufen der Steam-Spieldetails', 'error');
-        console.error(error);
-      }
+
+        // Unterschiedliche Hilfetexte je nach Plattform
+        switch (this.selectedPlatform) {
+          case 'steam':
+            document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single'
+              ? 'Wähle den Ordner, der das Steam-Spiel enthält.'
+              : 'Wähle den Steam-Bibliotheksordner (z.B. steamapps/common).';
+            break;
+          case 'dlsite':
+            document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single'
+              ? 'Wähle den Ordner, der das DLSite-Spiel enthält. Die RJ/RE-Nummer wird automatisch erkannt.'
+              : 'Wähle den Ordner, der deine DLSite-Spiele enthält.';
+            break;
+          case 'itchio':
+            document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single'
+              ? 'Wähle den Ordner, der das Itch.io-Spiel enthält.'
+              : 'Wähle den Ordner, der deine Itch.io-Spiele enthält.';
+            break;
+          default:
+            document.getElementById('folder-help-text').textContent = this.selectedImportType === 'single'
+              ? 'Wähle den Ordner, der das Spiel enthält.'
+              : 'Wähle den Ordner, der mehrere Spiele enthält.';
+            break;
+        }
+      });
     });
-  }
-  
- // DLSite-ID bestätigen
- const confirmDLSiteIdBtn = modal.querySelector('.confirm-dlsite-id');
- if (confirmDLSiteIdBtn) {
-   confirmDLSiteIdBtn.addEventListener('click', async () => {
-     const dlsiteId = document.getElementById('dlsite-id').value.trim();
-     const dlsiteCategory = document.getElementById('dlsite-category').value;
-     
-     if (!dlsiteId) {
-       this.showNotification('Bitte gib eine DLSite ID ein', 'error');
-       return;
-     }
-     
-     try {
-       // Spieldetails von DLSite abrufen
-       const gameDetails = await this.fetchDLSiteGameDetails(dlsiteId, dlsiteCategory);
-       
-       // Zum Game-Details-Schritt
-       document.getElementById('step-dlsite-id').style.display = 'none';
-       document.getElementById('step-game-details').style.display = 'block';
-       
-       // Spieldetails speichern für später
-       this.pendingGameDetails = {
-         ...gameDetails,
-         source: 'DLSite',
-         dlsiteId: dlsiteId,
-         dlsiteCategory: dlsiteCategory
-       };
-       
-       // Formular mit Details füllen
-       this.fillGameDetailsForm(this.pendingGameDetails);
-     } catch (error) {
-       this.showNotification('Fehler beim Abrufen der DLSite-Spieldetails', 'error');
-       console.error(error);
-     }
-   });
- }
-  
-  // Itch.io URL bestätigen
-  const confirmItchIoUrlBtn = modal.querySelector('.confirm-itchio-url');
-  if (confirmItchIoUrlBtn) {
-    confirmItchIoUrlBtn.addEventListener('click', async () => {
-      const itchioUrl = document.getElementById('itchio-url').value.trim();
-      
-      if (!itchioUrl) {
-        this.showNotification('Bitte gib eine Itch.io URL ein', 'error');
-        return;
-      }
-      
-      try {
-        // Spieldetails von Itch.io abrufen
-        const gameDetails = await this.fetchItchIoGameDetails(itchioUrl);
-        
-        // Zum Ordner-Auswahl-Schritt
-        document.getElementById('step-itchio-url').style.display = 'none';
-        document.getElementById('step-select-folder').style.display = 'block';
-        document.getElementById('folder-help-text').textContent = 'Wähle den Ordner, der das Itch.io-Spiel enthält.';
-        
-        // Spieldetails speichern für später
-        this.pendingGameDetails = {
-          ...gameDetails,
-          source: 'Itch.io',
-          itchioUrl: itchioUrl
-        };
-      } catch (error) {
-        this.showNotification('Fehler beim Abrufen der Itch.io-Spieldetails', 'error');
-        console.error(error);
-      }
-    });
-  }
-  
-  // Ordner auswählen
-  const selectFolderBtn = modal.querySelector('.select-folder-btn');
-  if (selectFolderBtn) {
-    selectFolderBtn.addEventListener('click', async () => {
-      try {
-        const result = await this.selectGameFolder();
-        
-        if (!result.success) {
-          this.showNotification(result.message || 'Ordnerauswahl abgebrochen', 'info');
+
+    // Steam-ID bestätigen
+    const confirmSteamIdBtn = modal.querySelector('.confirm-steam-id');
+    if (confirmSteamIdBtn) {
+      confirmSteamIdBtn.addEventListener('click', async () => {
+        const steamAppId = document.getElementById('steam-app-id').value.trim();
+        if (!steamAppId) {
+          this.showNotification('Bitte gib eine Steam App-ID ein', 'error');
           return;
         }
-        
-        // Spielverzeichnis speichern
-        this.selectedGameFolder = result.selectedFolder;
-        this.selectedExecutable = result.executable || '';
-        
-        // Für DLSite prüfen, ob wir eine ID gefunden haben
-        if (this.selectedPlatform === 'dlsite') {
-          if (result.gameDetails && result.gameDetails.dlsiteId) {
-            // ID wurde im Pfad gefunden, direkt zum Spieldetails-Schritt
+
+        try {
+          // Spieldetails von Steam abrufen
+          const gameDetails = await this.fetchSteamGameDetails(steamAppId);
+
+          // Zum Ordner-Auswahl-Schritt
+          document.getElementById('step-steam-id').style.display = 'none';
+          document.getElementById('step-select-folder').style.display = 'block';
+          document.getElementById('folder-help-text').textContent = 'Wähle den Ordner, der das Steam-Spiel enthält.';
+
+          // Spieldetails speichern für später
+          this.pendingGameDetails = {
+            ...gameDetails,
+            source: 'Steam',
+            steamAppId: steamAppId
+          };
+        } catch (error) {
+          this.showNotification('Fehler beim Abrufen der Steam-Spieldetails', 'error');
+          console.error(error);
+        }
+      });
+    }
+
+    // DLSite-ID bestätigen
+    const confirmDLSiteIdBtn = modal.querySelector('.confirm-dlsite-id');
+    if (confirmDLSiteIdBtn) {
+      confirmDLSiteIdBtn.addEventListener('click', async () => {
+        const dlsiteId = document.getElementById('dlsite-id').value.trim();
+        const dlsiteCategory = document.getElementById('dlsite-category').value;
+
+        if (!dlsiteId) {
+          this.showNotification('Bitte gib eine DLSite ID ein', 'error');
+          return;
+        }
+
+        try {
+          // Spieldetails von DLSite abrufen
+          const gameDetails = await this.fetchDLSiteGameDetails(dlsiteId, dlsiteCategory);
+
+          // Zum Game-Details-Schritt
+          document.getElementById('step-dlsite-id').style.display = 'none';
+          document.getElementById('step-game-details').style.display = 'block';
+
+          // Spieldetails speichern für später
+          this.pendingGameDetails = {
+            ...gameDetails,
+            source: 'DLSite',
+            dlsiteId: dlsiteId,
+            dlsiteCategory: dlsiteCategory
+          };
+
+          // Formular mit Details füllen
+          this.fillGameDetailsForm(this.pendingGameDetails);
+        } catch (error) {
+          this.showNotification('Fehler beim Abrufen der DLSite-Spieldetails', 'error');
+          console.error(error);
+        }
+      });
+    }
+
+    // Itch.io URL bestätigen
+    const confirmItchIoUrlBtn = modal.querySelector('.confirm-itchio-url');
+    if (confirmItchIoUrlBtn) {
+      confirmItchIoUrlBtn.addEventListener('click', async () => {
+        const itchioUrl = document.getElementById('itchio-url').value.trim();
+
+        if (!itchioUrl) {
+          this.showNotification('Bitte gib eine Itch.io URL ein', 'error');
+          return;
+        }
+
+        try {
+          // Spieldetails von Itch.io abrufen
+          const gameDetails = await this.fetchItchIoGameDetails(itchioUrl);
+
+          // Zum Ordner-Auswahl-Schritt
+          document.getElementById('step-itchio-url').style.display = 'none';
+          document.getElementById('step-select-folder').style.display = 'block';
+          document.getElementById('folder-help-text').textContent = 'Wähle den Ordner, der das Itch.io-Spiel enthält.';
+
+          // Spieldetails speichern für später
+          this.pendingGameDetails = {
+            ...gameDetails,
+            source: 'Itch.io',
+            itchioUrl: itchioUrl
+          };
+        } catch (error) {
+          this.showNotification('Fehler beim Abrufen der Itch.io-Spieldetails', 'error');
+          console.error(error);
+        }
+      });
+    }
+
+    // Ordner auswählen
+    const selectFolderBtn = modal.querySelector('.select-folder-btn');
+    if (selectFolderBtn) {
+      selectFolderBtn.addEventListener('click', async () => {
+        try {
+          const result = await this.selectGameFolder();
+
+          if (!result.success) {
+            this.showNotification(result.message || 'Ordnerauswahl abgebrochen', 'info');
+            return;
+          }
+
+          // Spielverzeichnis speichern
+          this.selectedGameFolder = result.selectedFolder;
+          this.selectedExecutable = result.executable || '';
+
+          // Für DLSite prüfen, ob wir eine ID gefunden haben
+          if (this.selectedPlatform === 'dlsite') {
+            if (result.gameDetails && result.gameDetails.dlsiteId) {
+              // ID wurde im Pfad gefunden, direkt zum Spieldetails-Schritt
+              document.getElementById('step-select-folder').style.display = 'none';
+              document.getElementById('step-game-details').style.display = 'block';
+
+              // Spieldetails speichern und Formular füllen
+              this.pendingGameDetails = result.gameDetails;
+              this.fillGameDetailsForm(this.pendingGameDetails);
+            } else {
+              // Keine ID gefunden, frage nach der ID
+              document.getElementById('step-select-folder').style.display = 'none';
+              document.getElementById('step-dlsite-id').style.display = 'block';
+            }
+          } else {
+            // Für andere Plattformen direkt zum Spieldetails-Schritt
             document.getElementById('step-select-folder').style.display = 'none';
             document.getElementById('step-game-details').style.display = 'block';
-            
-            // Spieldetails speichern und Formular füllen
-            this.pendingGameDetails = result.gameDetails;
-            this.fillGameDetailsForm(this.pendingGameDetails);
-          } else {
-            // Keine ID gefunden, frage nach der ID
-            document.getElementById('step-select-folder').style.display = 'none';
-            document.getElementById('step-dlsite-id').style.display = 'block';
+
+            // Formular mit den gefundenen Details füllen
+            this.fillGameDetailsForm(result.gameDetails || {});
           }
+        } catch (error) {
+          this.showNotification('Fehler bei der Ordnerauswahl', 'error');
+          console.error(error);
+        }
+      });
+    }
+
+    // Zurück-Buttons
+    const backButtons = modal.querySelectorAll('.back-btn');
+    backButtons.forEach(button => {
+      button.addEventListener('click', (e) => {
+        const currentStep = e.target.closest('.add-game-step');
+        currentStep.style.display = 'none';
+
+        // Je nach aktuellem Schritt zurück zum passenden vorherigen Schritt
+        if (currentStep.id === 'step-import-type') {
+          document.getElementById('step-platform').style.display = 'block';
+        } else if (['step-steam-id', 'step-dlsite-id', 'step-itchio-url'].includes(currentStep.id)) {
+          document.getElementById('step-import-type').style.display = 'block';
+        } else if (currentStep.id === 'step-select-folder') {
+          if (this.selectedImportType === 'single') {
+            // Zurück zur ID/URL-Eingabe
+            switch (this.selectedPlatform) {
+              case 'steam':
+                document.getElementById('step-steam-id').style.display = 'block';
+                break;
+              case 'dlsite':
+                document.getElementById('step-dlsite-id').style.display = 'block';
+                break;
+              case 'itchio':
+                document.getElementById('step-itchio-url').style.display = 'block';
+                break;
+              default:
+                document.getElementById('step-import-type').style.display = 'block';
+                break;
+            }
+          } else {
+            document.getElementById('step-import-type').style.display = 'block';
+          }
+        } else if (currentStep.id === 'step-game-details') {
+          document.getElementById('step-select-folder').style.display = 'block';
+        }
+      });
+    });
+
+    // Cover-URL Änderung überwachen
+    const coverUrlInput = document.getElementById('game-cover-url');
+    const coverPreviewImg = document.getElementById('cover-preview-img');
+
+    if (coverUrlInput && coverPreviewImg) {
+      coverUrlInput.addEventListener('input', () => {
+        const url = coverUrlInput.value.trim();
+        if (url) {
+          coverPreviewImg.src = url;
         } else {
-          // Für andere Plattformen direkt zum Spieldetails-Schritt
-          document.getElementById('step-select-folder').style.display = 'none';
-          document.getElementById('step-game-details').style.display = 'block';
-          
-          // Formular mit den gefundenen Details füllen
-          this.fillGameDetailsForm(result.gameDetails || {});
+          coverPreviewImg.src = 'assets/placeholder.png';
+        }
+      });
+    }
+
+    // Form-Submit-Handler
+    const form = document.getElementById('add-game-form');
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+
+      const gameInfo = {
+        title: form.querySelector('#game-title').value,
+        developer: form.querySelector('#game-developer').value,
+        publisher: form.querySelector('#game-publisher').value,
+        genre: form.querySelector('#game-genre').value,
+        source: form.querySelector('#game-source').value,
+        version: form.querySelector('#game-version').value,
+        description: form.querySelector('#game-description').value,
+        coverImage: form.querySelector('#game-cover-url').value,
+        executable: form.querySelector('#game-executable').value,
+
+        // Additional fields from pending game details
+        language: this.pendingGameDetails?.language,
+        releaseDate: this.pendingGameDetails?.dlsiteReleaseDate || this.pendingGameDetails?.releaseDate,
+
+        // Arrays of additional information
+        tags: this.pendingGameDetails?.dlsiteTags || this.pendingGameDetails?.tags,
+        authors: this.pendingGameDetails?.authors,
+        illustrators: this.pendingGameDetails?.illustrators,
+        scenario: this.pendingGameDetails?.scenario,
+        voiceActors: this.pendingGameDetails?.dlsiteVoiceActors,
+
+        // Platform-specific details
+        steamAppId: this.pendingGameDetails?.steamAppId,
+        dlsiteId: this.pendingGameDetails?.dlsiteId,
+        dlsiteCategory: this.pendingGameDetails?.dlsiteCategory,
+        dlsiteCircle: this.pendingGameDetails?.dlsiteCircle,
+        dlsiteFileSize: this.pendingGameDetails?.dlsiteFileSize,
+        itchioUrl: this.pendingGameDetails?.itchioUrl
+      };
+
+      // Spiel über IPC hinzufügen
+      try {
+        const result = await ipcRenderer.invoke('add-game-with-path', gameInfo, this.selectedGameFolder, this.selectedExecutable);
+
+        if (result.success) {
+          this.showNotification(result.message, 'success');
+          modal.remove();
+          this.loadGames();  // Spieleliste aktualisieren
+        } else {
+          this.showNotification(result.message, 'error');
         }
       } catch (error) {
-        this.showNotification('Fehler bei der Ordnerauswahl', 'error');
-        console.error(error);
+        console.error('Fehler beim Hinzufügen des Spiels:', error);
+        this.showNotification('Fehler beim Hinzufügen des Spiels', 'error');
       }
     });
   }
-  
-  // Zurück-Buttons
-  const backButtons = modal.querySelectorAll('.back-btn');
-  backButtons.forEach(button => {
-    button.addEventListener('click', (e) => {
-      const currentStep = e.target.closest('.add-game-step');
-      currentStep.style.display = 'none';
-      
-      // Je nach aktuellem Schritt zurück zum passenden vorherigen Schritt
-      if (currentStep.id === 'step-import-type') {
-        document.getElementById('step-platform').style.display = 'block';
-      } else if (['step-steam-id', 'step-dlsite-id', 'step-itchio-url'].includes(currentStep.id)) {
-        document.getElementById('step-import-type').style.display = 'block';
-      } else if (currentStep.id === 'step-select-folder') {
-        if (this.selectedImportType === 'single') {
-          // Zurück zur ID/URL-Eingabe
-          switch (this.selectedPlatform) {
-            case 'steam':
-              document.getElementById('step-steam-id').style.display = 'block';
-              break;
-            case 'dlsite':
-              document.getElementById('step-dlsite-id').style.display = 'block';
-              break;
-            case 'itchio':
-              document.getElementById('step-itchio-url').style.display = 'block';
-              break;
-            default:
-              document.getElementById('step-import-type').style.display = 'block';
-              break;
-          }
-        } else {
-          document.getElementById('step-import-type').style.display = 'block';
-        }
-      } else if (currentStep.id === 'step-game-details') {
-        document.getElementById('step-select-folder').style.display = 'block';
-      }
-    });
-  });
-  
-  // Cover-URL Änderung überwachen
-  const coverUrlInput = document.getElementById('game-cover-url');
-  const coverPreviewImg = document.getElementById('cover-preview-img');
-  
-  if (coverUrlInput && coverPreviewImg) {
-    coverUrlInput.addEventListener('input', () => {
-      const url = coverUrlInput.value.trim();
-      if (url) {
-        coverPreviewImg.src = url;
-      } else {
-        coverPreviewImg.src = 'assets/placeholder.png';
-      }
-    });
-  }
-  
-  // Form-Submit-Handler
-  const form = document.getElementById('add-game-form');
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    
-    const gameInfo = {
-      title: form.querySelector('#game-title').value,
-      developer: form.querySelector('#game-developer').value,
-      publisher: form.querySelector('#game-publisher').value,
-      genre: form.querySelector('#game-genre').value,
-      source: form.querySelector('#game-source').value,
-      version: form.querySelector('#game-version').value,
-      description: form.querySelector('#game-description').value,
-      coverImage: form.querySelector('#game-cover-url').value,
-      executable: form.querySelector('#game-executable').value,
-      
-      // Additional fields from pending game details
-      language: this.pendingGameDetails?.language,
-      releaseDate: this.pendingGameDetails?.dlsiteReleaseDate || this.pendingGameDetails?.releaseDate,
-      
-      // Arrays of additional information
-      tags: this.pendingGameDetails?.dlsiteTags || this.pendingGameDetails?.tags,
-      authors: this.pendingGameDetails?.authors,
-      illustrators: this.pendingGameDetails?.illustrators,
-      scenario: this.pendingGameDetails?.scenario,
-      voiceActors: this.pendingGameDetails?.dlsiteVoiceActors,
-      
-      // Platform-specific details
-      steamAppId: this.pendingGameDetails?.steamAppId,
-      dlsiteId: this.pendingGameDetails?.dlsiteId,
-      dlsiteCategory: this.pendingGameDetails?.dlsiteCategory,
-      dlsiteCircle: this.pendingGameDetails?.dlsiteCircle,
-      dlsiteFileSize: this.pendingGameDetails?.dlsiteFileSize,
-      itchioUrl: this.pendingGameDetails?.itchioUrl
-    };
-    
-    // Spiel über IPC hinzufügen
+
+  // Hilfsfunktion: Spielordner auswählen
+  async selectGameFolder() {
     try {
-      const result = await ipcRenderer.invoke('add-game-with-path', gameInfo, this.selectedGameFolder, this.selectedExecutable);
-      
-      if (result.success) {
-        this.showNotification(result.message, 'success');
-        modal.remove();
-        this.loadGames();  // Spieleliste aktualisieren
-      } else {
-        this.showNotification(result.message, 'error');
-      }
+      // IPC-Aufruf zum Öffnen des Dateiauswahldialogs
+      const result = await ipcRenderer.invoke('select-game-folder', this.selectedPlatform, this.selectedImportType);
+      return result;
     } catch (error) {
-      console.error('Fehler beim Hinzufügen des Spiels:', error);
-      this.showNotification('Fehler beim Hinzufügen des Spiels', 'error');
+      console.error('Fehler bei der Ordnerauswahl:', error);
+      throw error;
     }
-  });
-}
-
-// Hilfsfunktion: Spielordner auswählen
-async selectGameFolder() {
-  try {
-    // IPC-Aufruf zum Öffnen des Dateiauswahldialogs
-    const result = await ipcRenderer.invoke('select-game-folder', this.selectedPlatform, this.selectedImportType);
-    return result;
-  } catch (error) {
-    console.error('Fehler bei der Ordnerauswahl:', error);
-    throw error;
   }
-}
 
-// Hilfsfunktion: Spieldetails von Steam abrufen
-async fetchSteamGameDetails(appId) {
-  try {
-    // IPC-Aufruf zum Abrufen der Steam-Spieldetails
-    return await ipcRenderer.invoke('fetch-steam-game-details', appId);
-  } catch (error) {
-    console.error('Fehler beim Abrufen der Steam-Spieldetails:', error);
-    throw error;
+  // Hilfsfunktion: Spieldetails von Steam abrufen
+  async fetchSteamGameDetails(appId) {
+    try {
+      // IPC-Aufruf zum Abrufen der Steam-Spieldetails
+      return await ipcRenderer.invoke('fetch-steam-game-details', appId);
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Steam-Spieldetails:', error);
+      throw error;
+    }
   }
-}
 
-// Hilfsfunktion: Spieldetails von DLSite abrufen
-async fetchDLSiteGameDetails(dlsiteId, category = 'maniax') {
-  try {
-    // Nächste ID bestimmen (für die korrekte Bildbenennung)
-    const games = await ipcRenderer.invoke('scan-games');
-    const nextId = games.length + 1;
-    
-    // IPC-Aufruf zum Abrufen der DLSite-Spieldetails mit interner ID
-    return await ipcRenderer.invoke('fetch-dlsite-game-details', dlsiteId, category, nextId);
-  } catch (error) {
-    console.error('Fehler beim Abrufen der DLSite-Spieldetails:', error);
-    throw error;
-  }
-}
+  // Hilfsfunktion: Spieldetails von DLSite abrufen
+  async fetchDLSiteGameDetails(dlsiteId, category = 'maniax') {
+    try {
+      // Nächste ID bestimmen (für die korrekte Bildbenennung)
+      const games = await ipcRenderer.invoke('scan-games');
+      const nextId = games.length + 1;
 
-// Hilfsfunktion: Spieldetails von Itch.io abrufen
-async fetchItchIoGameDetails(url) {
-  try {
-    // IPC-Aufruf zum Abrufen der Itch.io-Spieldetails
-    return await ipcRenderer.invoke('fetch-itchio-game-details', url);
-  } catch (error) {
-    console.error('Fehler beim Abrufen der Itch.io-Spieldetails:', error);
-    throw error;
+      // IPC-Aufruf zum Abrufen der DLSite-Spieldetails mit interner ID
+      return await ipcRenderer.invoke('fetch-dlsite-game-details', dlsiteId, category, nextId);
+    } catch (error) {
+      console.error('Fehler beim Abrufen der DLSite-Spieldetails:', error);
+      throw error;
+    }
   }
-}
 
-// Hilfsfunktion: Spieldetails-Formular ausfüllen
-fillGameDetailsForm(details) {
-  const form = document.getElementById('add-game-form');
-  
-  // Grundlegende Felder ausfüllen
-  form.querySelector('#game-title').value = details.title || '';
-  form.querySelector('#game-developer').value = details.developer || '';
-  form.querySelector('#game-publisher').value = details.publisher || '';
-  form.querySelector('#game-genre').value = details.genre || '';
-  form.querySelector('#game-source').value = details.source || this.selectedPlatform || '';
-  form.querySelector('#game-version').value = details.version || '1.0';
-  form.querySelector('#game-description').value = details.description || '';
-  form.querySelector('#game-executable').value = details.executable || this.selectedExecutable || '';
-  
-  // Cover-Bild
-  if (details.coverImage) {
-    form.querySelector('#game-cover-url').value = details.coverImage;
-    document.getElementById('cover-preview-img').src = details.coverImage;
+  // Hilfsfunktion: Spieldetails von Itch.io abrufen
+  async fetchItchIoGameDetails(url) {
+    try {
+      // IPC-Aufruf zum Abrufen der Itch.io-Spieldetails
+      return await ipcRenderer.invoke('fetch-itchio-game-details', url);
+    } catch (error) {
+      console.error('Fehler beim Abrufen der Itch.io-Spieldetails:', error);
+      throw error;
+    }
   }
-}
-  
+
+  // Hilfsfunktion: Spieldetails-Formular ausfüllen
+  fillGameDetailsForm(details) {
+    const form = document.getElementById('add-game-form');
+
+    // Grundlegende Felder ausfüllen
+    form.querySelector('#game-title').value = details.title || '';
+    form.querySelector('#game-developer').value = details.developer || '';
+    form.querySelector('#game-publisher').value = details.publisher || '';
+    form.querySelector('#game-genre').value = details.genre || '';
+    form.querySelector('#game-source').value = details.source || this.selectedPlatform || '';
+    form.querySelector('#game-version').value = details.version || '1.0';
+    form.querySelector('#game-description').value = details.description || '';
+    form.querySelector('#game-executable').value = details.executable || this.selectedExecutable || '';
+
+    // Cover-Bild
+    if (details.coverImage) {
+      form.querySelector('#game-cover-url').value = details.coverImage;
+      document.getElementById('cover-preview-img').src = details.coverImage;
+    }
+  }
+
   // "Spiel bearbeiten" Modal anzeigen
   showEditGameModal(gameInfo) {
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.id = 'edit-game-modal';
-    
+
     modal.innerHTML = `
       <div class="modal-content">
         <div class="modal-header">
@@ -1637,26 +1641,26 @@ fillGameDetailsForm(details) {
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Modal-Interaktionen
     modal.querySelector('.close-modal').addEventListener('click', () => {
       modal.remove();
     });
-    
+
     // Klick außerhalb des Modals schließt es
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.remove();
       }
     });
-    
+
     // Form-Submit-Handler
     const form = document.getElementById('edit-game-form');
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
-      
+
       const updates = {
         title: form.querySelector('#edit-game-title').value,
         developer: form.querySelector('#edit-game-developer').value,
@@ -1666,10 +1670,10 @@ fillGameDetailsForm(details) {
         version: form.querySelector('#edit-game-version').value,
         description: form.querySelector('#edit-game-description').value
       };
-      
+
       try {
         const result = await ipcRenderer.invoke('update-game', gameInfo.directory, updates);
-        
+
         if (result.success) {
           this.showNotification(result.message, 'success');
           modal.remove();
@@ -1683,13 +1687,13 @@ fillGameDetailsForm(details) {
       }
     });
   }
-  
+
   // Bestätigung zum Löschen eines Spiels anzeigen
   confirmDeleteGame(directory, gameTitle) {
     const modal = document.createElement('div');
     modal.className = 'modal';
     modal.id = 'confirm-delete-modal';
-    
+
     modal.innerHTML = `
       <div class="modal-content confirm-modal">
         <div class="modal-header">
@@ -1706,30 +1710,30 @@ fillGameDetailsForm(details) {
         </div>
       </div>
     `;
-    
+
     document.body.appendChild(modal);
-    
+
     // Modal-Interaktionen
     modal.querySelector('.close-modal').addEventListener('click', () => {
       modal.remove();
     });
-    
+
     modal.querySelector('#cancel-delete-btn').addEventListener('click', () => {
       modal.remove();
     });
-    
+
     // Klick außerhalb des Modals schließt es
     modal.addEventListener('click', (e) => {
       if (e.target === modal) {
         modal.remove();
       }
     });
-    
+
     // Bestätigungs-Handler
     modal.querySelector('#confirm-delete-btn').addEventListener('click', async () => {
       try {
         const result = await ipcRenderer.invoke('delete-game', directory);
-        
+
         if (result.success) {
           this.showNotification(result.message, 'success');
           this.loadGames();  // Spieleliste aktualisieren
@@ -1744,43 +1748,43 @@ fillGameDetailsForm(details) {
       }
     });
   }
-  
+
   // Benachrichtigung anzeigen
   showNotification(message, type = 'info') {
     // Bestehende Benachrichtigungen finden
     const existingNotifications = document.querySelectorAll('.notification');
     const offset = existingNotifications.length * 60;
-    
+
     const notification = document.createElement('div');
     notification.className = `notification ${type}`;
     notification.style.bottom = `${20 + offset}px`;
-    
+
     notification.innerHTML = `
       <div class="notification-content">
         <span>${message}</span>
         <button class="close-notification">&times;</button>
       </div>
     `;
-    
+
     document.body.appendChild(notification);
-    
+
     // Animation hinzufügen
     setTimeout(() => {
       notification.classList.add('show');
     }, 10);
-    
+
     // Automatisch nach 5 Sekunden schließen
     const timeout = setTimeout(() => {
       closeNotification();
     }, 5000);
-    
+
     // Schließen-Button
     const closeBtn = notification.querySelector('.close-notification');
     closeBtn.addEventListener('click', () => {
       clearTimeout(timeout);
       closeNotification();
     });
-    
+
     // Funktion zum Schließen der Benachrichtigung
     function closeNotification() {
       notification.classList.remove('show');
